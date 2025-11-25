@@ -30,17 +30,17 @@ import pyBigWig
 
 def parse_args():
     p = argparse.ArgumentParser(description="Extract BigWig signal values for target genes.")
-    p.add_argument("--pangenome-folder", required=True)
-    p.add_argument("--pangenome-index", required=True)
-    p.add_argument("--bigwig-folder", required=True)
-    p.add_argument("--bigwig-index", required=True)
-    p.add_argument("--target-genes", required=True)
+    p.add_argument("--pangenome_folder", required=True)
+    p.add_argument("--pangenome_index", required=True)
+    p.add_argument("--bigwig_folder", required=True)
+    p.add_argument("--bigwig_index", required=True)
+    p.add_argument("--target_genes", required=True)
     p.add_argument("--output", required=True)
 
     p.add_argument("--type", default="gene")
     p.add_argument("--upstream", type=int, default=0)
     p.add_argument("--downstream", type=int, default=0)
-    p.add_argument("--whole-seq", action="true")
+    p.add_argument("--whole-seq", action="store_true")
     p.add_argument("--inner-start", type=int, default=0)
     p.add_argument("--inner-end", type=int, default=0)
     p.add_argument("--pad", type=int, default=0, help="Pad with this many null values between segments")
