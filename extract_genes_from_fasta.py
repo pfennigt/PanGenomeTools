@@ -19,7 +19,8 @@ import gzip
 import sys
 import re
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union
+import numpy as np
 
 try:
     from pyfaidx import Fasta
@@ -110,21 +111,68 @@ def parse_gff_features(gff_path: Path, feature_type: str):
 
             yield seqid, start_i, end_i, strand, attr
 
-
-def find_feature_for_id(gff_path: Path, feature_type: str, target_id: str):
+def find_feature_for_id(gff_path: Path, feature_type: str, target_id: str, search_mode:str="strict", return_all):
     if not target_id:
         return None
 
     escaped = re.escape(target_id)
-    pattern = re.compile(r"(^|[;\t,])" + escaped + r"($|[;\t,])")
+
+    if search_mode == "pattern":
+        pattern = re.compile(escaped)
+    elif search_mode == "strict":
+        pattern = re.compile(r"(^|[;\t,])" + escaped + r"($|[;\t,])")
+    elif search_mode == "children":
+        pattern = re.compile(r"(^|[;\t,])" + escaped + r"($|[;\t,]|\.)")
+    else:
+        raise ValueError(f"undefined search_mode: '{search_mode}'")
+
+    res = []
 
     for seqid, start, end, strand, attr in parse_gff_features(gff_path, feature_type):
         for v in attr.values():
             if v == target_id or pattern.search(v):
-                return seqid, start, end, strand, attr
+                if return_all:
+                    res.append((seqid, start, end, strand, attr))
+                else:
+                    return [(seqid, start, end, strand, attr)]
+    if return_all and len(res) > 0:
+        return res
+    else:
+        return None
 
-    return None
 
+def merge_features(feats:Union[list,None], strategy="merge") -> Tuple:
+    if feats is None:
+        return None, None
+    elif len(feats) == 1:
+        # If there is only one entry, return it
+        return feats[0], None
+    elif strategy=="first":
+        return feats[0], "_first"
+    elif strategy == "merge":
+        seqid, start, end, strand, attr = feats[0]
+
+        # Iterate through the features
+        for feat in feats[1:]:
+            _seqid, _start, _end, _strand, _attr = feat
+
+            # Assert that the ID ands strand must be the same for merging
+            if _seqid != seqid:
+                raise RuntimeError(f"differing seqids in selected features: {_seqid} != {seqid}")
+            if _strand != strand:
+                raise RuntimeError(f"differing strands in selected features")
+            
+            # Update start and end
+            start = np.min([start, _start])
+            end = np.max([end, _end])
+
+            # Update the attributes
+            attr.update(_attr)
+
+        # Return the merged feature
+        return (seqid, start, end, strand, attr), "_merged"
+    else:
+        raise RuntimeError("error in merging features")
 
 # ---------------------- coordinate helpers ----------------------
 
@@ -181,7 +229,12 @@ def main():
             if not gene_id:
                 continue
 
-            feat = find_feature_for_id(gff_path, args.type, gene_id)
+            # Get all the features
+            feats = find_feature_for_id(gff_path, args.type, gene_id, return_all=True)
+
+            # Merge the features
+            feat, merge_text = merge_features(feats)
+
             if feat is None:
                 print(f"Warning: gene_id {gene_id} not found in {g}", file=sys.stderr)
                 continue
@@ -244,9 +297,40 @@ def main():
                 combined = str(Seq(combined).reverse_complement())
 
             # write
+            header_location = [
+                f"{seqid}:{ll}-{lh}({strand})" if len(left_seq) >0 else None,
+                f"{seqid}:{rl}-{rh}({strand})" if len(right_seq) >0 else None,
+                ]
+            # Remove either location if it is irrelevant
+            header_location = [x for x in header_location if x is not None]
+            # Join the locations
+            header_location = "&".join(header_location)
+
+            # Set the label for the sequence ID
+            # Determine if the sequence is a promoter and/or terminator
+            if len(left_seq) >0 and len(right_seq) >0:
+                label="extracted"
+            elif (len(left_seq) >0 and strand == "+") or (len(right_seq) >0 and strand == "-"):
+                label="promoter"
+            elif (len(left_seq) >0 and strand == "-") or (len(right_seq) >0 and strand == "+"):
+                label="terminator"
+            else:
+                raise RuntimeError(f"error in determining sequence type for {gene_id}")
+
+            # Get the extraction options
+            ex_options = [
+                f"upstream={args.upstream}" if args.upstream is not None else "-",
+                f"inner_start={args.inner_start}" if (args.inner_start is not None and not args.whole_seq) else "-",
+                f"inner_end={args.inner_end}" if (args.inner_end is not None and not args.whole_seq) else "-",
+                f"downstream={args.downstream}" if args.downstream is not None else "-",
+            ]
+            # Join the options
+            ex_options = "|".join(ex_options)
+
+            # Create the header
             header = (
-                f"genotype={g}|gene_name={gene_name}|gene_id={gene_id}|"
-                f"location={seqid}:{start}-{end}({strand})"
+                f"{gene_id}_{label} genotype={g} gene_name={gene_name} type={args.type}{merge_text}"
+                f"location={header_location} extraction_options={ex_options}"
             )
             out_fh.write(f">{header}\n")
             for i in range(0, len(combined), 80):
