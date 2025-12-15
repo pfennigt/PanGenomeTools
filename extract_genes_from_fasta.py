@@ -47,6 +47,8 @@ def parse_args():
     p.add_argument("--inner-end", type=int, default=0)
     p.add_argument("--pad", default="")
 
+    p.add_argument("--search-mode", default="children")
+
     return p.parse_args()
 
 
@@ -111,7 +113,7 @@ def parse_gff_features(gff_path: Path, feature_type: str):
 
             yield seqid, start_i, end_i, strand, attr
 
-def find_feature_for_id(gff_path: Path, feature_type: str, target_id: str, search_mode:str="strict", return_all):
+def find_feature_for_id(gff_path: Path, feature_type: str, target_id: str, search_mode:str="strict", return_all:bool=False):
     if not target_id:
         return None
 
@@ -230,13 +232,13 @@ def main():
                 continue
 
             # Get all the features
-            feats = find_feature_for_id(gff_path, args.type, gene_id, return_all=True)
+            feats = find_feature_for_id(gff_path, args.type, gene_id, search_mode=args.search_mode, return_all=True)
 
             # Merge the features
-            feat, merge_text = merge_features(feats)
+            feat, merge_text = merge_features(feats, strategy="merge")
 
             if feat is None:
-                print(f"Warning: gene_id {gene_id} not found in {g}", file=sys.stderr)
+                print(f"Warning: gene_id {gene_id} with feature {args.type} not found in {g}" + " consider sing search_mode 'children' or 'pattern'" if args.search_mode=="strict" else "", file=sys.stderr)
                 continue
 
             seqid, start, end, strand, attr = feat
@@ -283,6 +285,9 @@ def main():
             left_seq = fa[chrom][ll - 1: lh].seq if ll <= lh else ""
             right_seq = fa[chrom][rl - 1: rh].seq if rl <= rh else ""
 
+            print(f"ll:{ll}, lh:{lh}, rl:{rl}, rh:{rh}", file=sys.stdout)
+            print(f"left_seq:{len(left_seq)}, right_seq:{len(right_seq)}", file=sys.stdout)
+
             # special zero rules
             if args.upstream == 0 and inner_start == 0 and not args.whole_seq:
                 left_seq = ""
@@ -299,7 +304,7 @@ def main():
             # write
             header_location = [
                 f"{seqid}:{ll}-{lh}({strand})" if len(left_seq) >0 else None,
-                f"{seqid}:{rl}-{rh}({strand})" if len(right_seq) >0 else None,
+                f"{seqid}:{rl}-{rh}({strand})" if len(right_seq) >0 and not args.whole_seq else None,
                 ]
             # Remove either location if it is irrelevant
             header_location = [x for x in header_location if x is not None]
@@ -308,8 +313,8 @@ def main():
 
             # Set the label for the sequence ID
             # Determine if the sequence is a promoter and/or terminator
-            if len(left_seq) >0 and len(right_seq) >0:
-                label="extracted"
+            if (len(left_seq) >0 and len(right_seq) >0) or args.whole_seq:
+                label="flanking"
             elif (len(left_seq) >0 and strand == "+") or (len(right_seq) >0 and strand == "-"):
                 label="promoter"
             elif (len(left_seq) >0 and strand == "-") or (len(right_seq) >0 and strand == "+"):
@@ -319,17 +324,17 @@ def main():
 
             # Get the extraction options
             ex_options = [
-                f"upstream={args.upstream}" if args.upstream is not None else "-",
-                f"inner_start={args.inner_start}" if (args.inner_start is not None and not args.whole_seq) else "-",
-                f"inner_end={args.inner_end}" if (args.inner_end is not None and not args.whole_seq) else "-",
-                f"downstream={args.downstream}" if args.downstream is not None else "-",
+                f"upstream:{args.upstream}" if args.upstream is not None else "-",
+                f"inner_start:{args.inner_start}" if (args.inner_start is not None and not args.whole_seq) else "-",
+                f"inner_end:{args.inner_end}" if (args.inner_end is not None and not args.whole_seq) else "-",
+                f"downstream:{args.downstream}" if args.downstream is not None else "-",
             ]
             # Join the options
-            ex_options = "|".join(ex_options)
+            ex_options = "&".join(ex_options)
 
             # Create the header
             header = (
-                f"{gene_id}_{label} genotype={g} gene_name={gene_name} type={args.type}{merge_text}"
+                f"{gene_id}_{label} genotype={g} gene_name={gene_name} type={args.type}{merge_text} "
                 f"location={header_location} extraction_options={ex_options}"
             )
             out_fh.write(f">{header}\n")
