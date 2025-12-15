@@ -3,3 +3,6 @@ __pycache__
 
 # Ignore .vscode
 .vscode
+
+# Ignore test files
+tests
