@@ -21,6 +21,7 @@ import re
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 import numpy as np
+from tqdm.auto import tqdm
 
 try:
     from pyfaidx import Fasta
@@ -48,6 +49,8 @@ def parse_args():
     p.add_argument("--pad", default="")
 
     p.add_argument("--search-mode", default="children")
+    p.add_argument("--use-five-prime-direction", action="store_true")
+    p.add_argument("--silent", action="store_true")
 
     return p.parse_args()
 
@@ -162,7 +165,7 @@ def merge_features(feats:Union[list,None], strategy="merge") -> Tuple:
             if _seqid != seqid:
                 raise RuntimeError(f"differing seqids in selected features: {_seqid} != {seqid}")
             if _strand != strand:
-                raise RuntimeError(f"differing strands in selected features")
+                raise RuntimeError("differing strands in selected features")
             
             # Update start and end
             start = np.min([start, _start])
@@ -185,10 +188,33 @@ def clip_coords(a: int, b: int, seq_len: int):
     return (a2, b2) if a2 <= b2 else (1, 0)
 
 
+
+def check_coords(ll, lh, rl, rh, seq_len):
+    # Check if either the left or right window are excluded
+    left_excluded = ll==1 and lh==0
+    right_excluded = rl==1 and rh==0
+
+    # Check that all coordinates are larger than 1
+    if (not left_excluded and (ll<1 or lh<1)) or (not right_excluded and (rl <1 or rh<1)):
+        raise ValueError(f"calculated sequence position lower than 1: ll:{ll}, lh:{lh}, rl:{rl}, rh:{rh}")
+    
+    # Check that all coordinates are not longer than the sequence length
+    if ll>seq_len or lh>seq_len or rl>seq_len or rh>seq_len:
+        raise ValueError(f"calculated sequence position larger than sequence length ({seq_len}): ll:{ll}, lh:{lh}, rl:{rl}, rh:{rh}") 
+
+    # Check that all positions are in the right order
+    if (not left_excluded and ll>lh) or (not right_excluded and rl>rh) or (not left_excluded and not right_excluded and lh>rl):
+        raise ValueError(f"calculated sequence positions not correctly ordered, possible overlap: ll:{ll}, lh:{lh}, rl:{rl}, rh:{rh}")
+    
+    return ll, lh, rl, rh
+
 # ---------------------- main extraction ----------------------
 
 def main():
     args = parse_args()
+
+    if args.whole_seq and (args.inner_start != 0 or args.inner_end != 0):
+        raise ValueError("--whole-seq cannot be used with --inner_start or --inner_end")
 
     pangenome_folder = Path(args.pangenome_folder)
     index = read_index(Path(args.pangenome_index))
@@ -208,7 +234,7 @@ def main():
     out_fh = open(args.output, "w")
 
     # --------- PROCESS ONE GENOTYPE AT A TIME (pyfaidx does streaming) ---------
-    for g in genotypes_in_targets:
+    for g in tqdm(genotypes_in_targets, desc="Genotypes", disable=args.silent):
 
         if g not in geno_files:
             continue
@@ -224,7 +250,7 @@ def main():
             fa = Fasta(str(fasta_path), rebuild=True)
 
         # Process all rows referring to this genotype
-        for row in target_rows:
+        for row in tqdm(target_rows, desc="Genes    ", leave=False, disable=args.silent):
 
             gene_name = row.get("gene_name", "")
             gene_id = row.get(f"gene_ID_{g}", "")
@@ -243,25 +269,31 @@ def main():
 
             seqid, start, end, strand, attr = feat
 
+            # Switch left and right windows if the feature is on the reverse strand
+            if not args.use_five_prime_direction and strand == "-":
+                (upstream, inner_start, inner_end, downstream) = (args.downstream, args.inner_end, args.inner_start, args.upstream)
+            else:
+                (upstream, inner_start, inner_end, downstream) = (args.upstream, args.inner_start, args.inner_end, args.downstream)
+
+
             # orientation
             bstart, bend = (end, start) if strand == "-" else (start, end)
 
-            # determine inner offsets
-            if args.whole_seq:
-                inner_start, inner_end = 0, 0
-            else:
-                inner_start, inner_end = args.inner_start, args.inner_end
-
             # boundaries (exact original logic)
-            left_a = bstart - args.upstream
+            left_a = bstart - upstream
             left_b = bstart + inner_start - 1
 
             right_a = bend - inner_end + 1
-            right_b = bend + args.downstream
+            right_b = bend + downstream
 
+            # Use the maximum range of whole-seq is given
             if args.whole_seq:
-                left_a = min(start, end)
-                left_b = max(start, end)
+                left_a = np.min([left_a, right_b])
+                left_b = np.max([left_a, right_b])
+                right_a, right_b = 1, 0
+            elif upstream==0 and inner_start==0:
+                left_a, left_b = 1, 0
+            elif downstream==0 and inner_end==0:
                 right_a, right_b = 1, 0
 
             # find the correct chromosome name
@@ -278,20 +310,20 @@ def main():
             seqlen = len(fa[chrom])
 
             # clip
-            ll, lh = clip_coords(left_a, left_b, seqlen)
-            rl, rh = clip_coords(right_a, right_b, seqlen)
+            # ll, lh = clip_coords(left_a, left_b, seqlen)
+            # rl, rh = clip_coords(right_a, right_b, seqlen)
+
+            # Check the inputs
+            ll, lh, rl, rh = check_coords(left_a, left_b, right_a, right_b, seqlen)
 
             # extract (pyfaidx returns strings)
             left_seq = fa[chrom][ll - 1: lh].seq if ll <= lh else ""
             right_seq = fa[chrom][rl - 1: rh].seq if rl <= rh else ""
 
-            print(f"ll:{ll}, lh:{lh}, rl:{rl}, rh:{rh}", file=sys.stdout)
-            print(f"left_seq:{len(left_seq)}, right_seq:{len(right_seq)}", file=sys.stdout)
-
             # special zero rules
-            if args.upstream == 0 and inner_start == 0 and not args.whole_seq:
+            if upstream == 0 and inner_start == 0 and not args.whole_seq:
                 left_seq = ""
-            if args.downstream == 0 and inner_end == 0 and not args.whole_seq:
+            if downstream == 0 and inner_end == 0 and not args.whole_seq:
                 right_seq = ""
 
             # compose
@@ -324,10 +356,12 @@ def main():
 
             # Get the extraction options
             ex_options = [
-                f"upstream:{args.upstream}" if args.upstream is not None else "-",
-                f"inner_start:{args.inner_start}" if (args.inner_start is not None and not args.whole_seq) else "-",
-                f"inner_end:{args.inner_end}" if (args.inner_end is not None and not args.whole_seq) else "-",
-                f"downstream:{args.downstream}" if args.downstream is not None else "-",
+                f"upstream:{upstream}",
+                f"inner_start:{inner_start}" if not args.whole_seq else "",
+                f"inner_end:{inner_end}" if not args.whole_seq else "",
+                f"downstream:{downstream}" if args.downstream is not None else "-",
+                "whole-seq:True" if args.whole_seq else "",
+                "use-five-prime-direction:True" if args.use_five_prime_direction else "",
             ]
             # Join the options
             ex_options = "&".join(ex_options)
