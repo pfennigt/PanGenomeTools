@@ -10,7 +10,7 @@ The extraction logic is identical to your original script:
     (upstream → inner-start) + PAD + (inner-end → downstream)
 with whole-seq optional, and proper strand handling.
 
-pyfaidx ensures low RAM usage even for huge genomes.
+WARNING: This function does not excise introns, even when using the 'CDS' sequence type
 """
 
 import argparse
@@ -22,6 +22,8 @@ from pathlib import Path
 from typing import Dict, List, Optional, Tuple, Union
 import numpy as np
 from tqdm.auto import tqdm
+from tqdm.contrib import DummyTqdmFile
+import contextlib
 
 try:
     from pyfaidx import Fasta
@@ -189,7 +191,7 @@ def clip_coords(a: int, b: int, seq_len: int):
 
 
 
-def check_coords(ll, lh, rl, rh, seq_len):
+def check_coords(ll, lh, rl, rh, seq_len, gene_len, intra_gene_len):
     # Check if either the left or right window are excluded
     left_excluded = ll==1 and lh==0
     right_excluded = rl==1 and rh==0
@@ -203,10 +205,23 @@ def check_coords(ll, lh, rl, rh, seq_len):
         raise ValueError(f"calculated sequence position larger than sequence length ({seq_len}): ll:{ll}, lh:{lh}, rl:{rl}, rh:{rh}") 
 
     # Check that all positions are in the right order
-    if (not left_excluded and ll>lh) or (not right_excluded and rl>rh) or (not left_excluded and not right_excluded and lh>rl):
+    if (not left_excluded and ll>lh) or (not right_excluded and rl>rh) or (not left_excluded and not right_excluded and gene_len > intra_gene_len and lh>rl):
         raise ValueError(f"calculated sequence positions not correctly ordered, possible overlap: ll:{ll}, lh:{lh}, rl:{rl}, rh:{rh}")
     
     return ll, lh, rl, rh
+
+@contextlib.contextmanager
+def std_out_err_redirect_tqdm():
+    orig_out_err = sys.stdout, sys.stderr
+    try:
+        sys.stdout, sys.stderr = map(DummyTqdmFile, orig_out_err)
+        yield orig_out_err[0]
+    # Relay exceptions
+    except Exception as exc:
+        raise exc
+    # Always restore sys.stdout/err if necessary
+    finally:
+        sys.stdout, sys.stderr = orig_out_err
 
 # ---------------------- main extraction ----------------------
 
@@ -224,7 +239,7 @@ def main():
     geno_files = {}
     for g in genotypes_in_targets:
         if g not in index:
-            print(f"Warning: genotype {g} missing in index.", file=sys.stderr)
+            print(f"Warning: genotype {g} missing in index.", file=sys.stdout)
             continue
         geno_files[g] = {
             "gff": pangenome_folder / index[g]["annotation"],
@@ -234,152 +249,165 @@ def main():
     out_fh = open(args.output, "w")
 
     # --------- PROCESS ONE GENOTYPE AT A TIME (pyfaidx does streaming) ---------
-    for g in tqdm(genotypes_in_targets, desc="Genotypes", disable=args.silent):
+    with std_out_err_redirect_tqdm() as orig_stdout:
+        for g in tqdm(genotypes_in_targets, desc="Genotypes", file=orig_stdout, disable=args.silent, dynamic_ncols=True):
 
-        if g not in geno_files:
-            continue
-
-        gff_path = geno_files[g]["gff"]
-        fasta_path = geno_files[g]["fasta"]
-
-        try:
-            # pyfaidx loads only FASTA index; bases are streamed
-            fa = Fasta(str(fasta_path), rebuild=False)
-        except Exception:
-            # rebuild if missing index
-            fa = Fasta(str(fasta_path), rebuild=True)
-
-        # Process all rows referring to this genotype
-        for row in tqdm(target_rows, desc="Genes    ", leave=False, disable=args.silent):
-
-            gene_name = row.get("gene_name", "")
-            gene_id = row.get(f"gene_ID_{g}", "")
-            if not gene_id:
+            if g not in geno_files:
                 continue
 
-            # Get all the features
-            feats = find_feature_for_id(gff_path, args.type, gene_id, search_mode=args.search_mode, return_all=True)
+            gff_path = geno_files[g]["gff"]
+            fasta_path = geno_files[g]["fasta"]
 
-            # Merge the features
-            feat, merge_text = merge_features(feats, strategy="merge")
+            try:
+                # pyfaidx loads only FASTA index; bases are streamed
+                fa = Fasta(str(fasta_path), rebuild=False)
+            except Exception:
+                # rebuild if missing index
+                fa = Fasta(str(fasta_path), rebuild=True)
 
-            if feat is None:
-                print(f"Warning: gene_id {gene_id} with feature {args.type} not found in {g}" + " consider sing search_mode 'children' or 'pattern'" if args.search_mode=="strict" else "", file=sys.stderr)
-                continue
+            # Process all rows referring to this genotype
+            for row in tqdm(target_rows, desc="Genes    ", leave=False, file=orig_stdout, disable=args.silent, dynamic_ncols=True):
 
-            seqid, start, end, strand, attr = feat
+                gene_name = row.get("gene_name", "")
+                gene_id_raw = row.get(f"gene_ID_{g}", "")
+                if not gene_id_raw or gene_id_raw in ["", "[]", "[\"\"]", "['']"]:
+                    continue
 
-            # Switch left and right windows if the feature is on the reverse strand
-            if not args.use_five_prime_direction and strand == "-":
-                (upstream, inner_start, inner_end, downstream) = (args.downstream, args.inner_end, args.inner_start, args.upstream)
-            else:
-                (upstream, inner_start, inner_end, downstream) = (args.upstream, args.inner_start, args.inner_end, args.downstream)
+                # Strip potential whitespaces in the gene ID
+                gene_id_raw = gene_id_raw.strip()
 
+                # If gene_id is a list, extract all of them
+                if gene_id_raw[0] == "[":
+                    gene_id_raw = gene_id_raw[1:-1].split(",")
 
-            # orientation
-            bstart, bend = (end, start) if strand == "-" else (start, end)
+                for gene_id in gene_id_raw:
+                    # Remove spaces and quotation marks
+                    gene_id = gene_id.strip()
+                    gene_id = re.sub("[\"|']", "", gene_id)
 
-            # boundaries (exact original logic)
-            left_a = bstart - upstream
-            left_b = bstart + inner_start - 1
+                    # Get all the features
+                    feats = find_feature_for_id(gff_path, args.type, gene_id, search_mode=args.search_mode, return_all=True)
 
-            right_a = bend - inner_end + 1
-            right_b = bend + downstream
+                    # Merge the features
+                    feat, merge_text = merge_features(feats, strategy="merge")
 
-            # Use the maximum range of whole-seq is given
-            if args.whole_seq:
-                left_a = np.min([left_a, right_b])
-                left_b = np.max([left_a, right_b])
-                right_a, right_b = 1, 0
-            elif upstream==0 and inner_start==0:
-                left_a, left_b = 1, 0
-            elif downstream==0 and inner_end==0:
-                right_a, right_b = 1, 0
+                    if feat is None:
+                        print(f"Warning: gene_id {gene_id} with feature {args.type} not found in {g}" + (" consider sing search_mode 'children' or 'pattern'" if args.search_mode=="strict" else ""), file=sys.stdout)
+                        continue
 
-            # find the correct chromosome name
-            if seqid in fa:
-                chrom = seqid
-            elif "chr" + seqid in fa:
-                chrom = "chr" + seqid
-            elif seqid.replace("chr", "") in fa:
-                chrom = seqid.replace("chr", "")
-            else:
-                print(f"Warning: seqid {seqid} not found in FASTA for {g}", file=sys.stderr)
-                continue
+                    seqid, start, end, strand, attr = feat
 
-            seqlen = len(fa[chrom])
+                    # Switch left and right windows if the feature is on the reverse strand
+                    if not args.use_five_prime_direction and strand == "-":
+                        (upstream, inner_start, inner_end, downstream) = (args.downstream, args.inner_end, args.inner_start, args.upstream)
+                    else:
+                        (upstream, inner_start, inner_end, downstream) = (args.upstream, args.inner_start, args.inner_end, args.downstream)
 
-            # clip
-            # ll, lh = clip_coords(left_a, left_b, seqlen)
-            # rl, rh = clip_coords(right_a, right_b, seqlen)
+                    bstart, bend = (start, end)
 
-            # Check the inputs
-            ll, lh, rl, rh = check_coords(left_a, left_b, right_a, right_b, seqlen)
+                    # boundaries (exact original logic)
+                    left_a = bstart - upstream
+                    left_b = bstart + inner_start - 1
 
-            # extract (pyfaidx returns strings)
-            left_seq = fa[chrom][ll - 1: lh].seq if ll <= lh else ""
-            right_seq = fa[chrom][rl - 1: rh].seq if rl <= rh else ""
+                    right_a = bend - inner_end + 1
+                    right_b = bend + downstream
 
-            # special zero rules
-            if upstream == 0 and inner_start == 0 and not args.whole_seq:
-                left_seq = ""
-            if downstream == 0 and inner_end == 0 and not args.whole_seq:
-                right_seq = ""
+                    # Use the maximum range of whole-seq is given
+                    if args.whole_seq:
+                        left_a = np.min([left_a, right_b])
+                        left_b = np.max([left_a, right_b])
+                        right_a, right_b = 1, 0
+                    elif upstream==0 and inner_start==0:
+                        left_a, left_b = 1, 0
+                    elif downstream==0 and inner_end==0:
+                        right_a, right_b = 1, 0
 
-            # compose
-            combined = left_seq + args.pad + right_seq
+                    # find the correct chromosome name
+                    if seqid in fa:
+                        chrom = seqid
+                    elif "chr" + seqid in fa:
+                        chrom = "chr" + seqid
+                    elif seqid.replace("chr", "") in fa:
+                        chrom = seqid.replace("chr", "")
+                    else:
+                        print(f"Warning: seqid {seqid} not found in FASTA for {g}", file=sys.stdout)
+                        continue
 
-            # strand correction
-            if strand == "-":
-                combined = str(Seq(combined).reverse_complement())
+                    seqlen = len(fa[chrom])
 
-            # write
-            header_location = [
-                f"{seqid}:{ll}-{lh}({strand})" if len(left_seq) >0 else None,
-                f"{seqid}:{rl}-{rh}({strand})" if len(right_seq) >0 and not args.whole_seq else None,
-                ]
-            # Remove either location if it is irrelevant
-            header_location = [x for x in header_location if x is not None]
-            # Join the locations
-            header_location = "&".join(header_location)
+                    # Check the inputs
+                    ll, lh, rl, rh = check_coords(left_a, left_b, right_a, right_b, seqlen, gene_len=end-start, intra_gene_len=inner_start+inner_end)
 
-            # Set the label for the sequence ID
-            # Determine if the sequence is a promoter and/or terminator
-            if (len(left_seq) >0 and len(right_seq) >0) or args.whole_seq:
-                label="flanking"
-            elif (len(left_seq) >0 and strand == "+") or (len(right_seq) >0 and strand == "-"):
-                label="promoter"
-            elif (len(left_seq) >0 and strand == "-") or (len(right_seq) >0 and strand == "+"):
-                label="terminator"
-            else:
-                raise RuntimeError(f"error in determining sequence type for {gene_id}")
+                    # Warn if the gene is short
+                    if inner_start+inner_end > end-start:
+                        print(f"Warning: gene {gene_id} is shorter than inner_start+inner_end ({end-start} < {inner_start+inner_end})", file=sys.stdout)
 
-            # Get the extraction options
-            ex_options = [
-                f"upstream:{upstream}",
-                f"inner_start:{inner_start}" if not args.whole_seq else "",
-                f"inner_end:{inner_end}" if not args.whole_seq else "",
-                f"downstream:{downstream}" if args.downstream is not None else "-",
-                "whole-seq:True" if args.whole_seq else "",
-                "use-five-prime-direction:True" if args.use_five_prime_direction else "",
-            ]
-            # Join the options
-            ex_options = "&".join(ex_options)
+                    # extract (pyfaidx returns strings)
+                    left_seq = fa[chrom][ll - 1: lh].seq if ll <= lh else ""
+                    right_seq = fa[chrom][rl - 1: rh].seq if rl <= rh else ""
 
-            # Create the header
-            header = (
-                f"{gene_id}_{label} genotype={g} gene_name={gene_name} type={args.type}{merge_text} "
-                f"location={header_location} extraction_options={ex_options}"
-            )
-            out_fh.write(f">{header}\n")
-            for i in range(0, len(combined), 80):
-                out_fh.write(combined[i:i+80] + "\n")
+                    # special zero rules
+                    if upstream == 0 and inner_start == 0 and not args.whole_seq:
+                        left_seq = ""
+                    if downstream == 0 and inner_end == 0 and not args.whole_seq:
+                        right_seq = ""
 
-        # unload FASTA completely
-        fa.close()
-        del fa
+                    # compose
+                    combined = left_seq + (args.pad if not args.whole_seq else "") + right_seq
 
-    out_fh.close()
+                    # strand correction
+                    if strand == "-":
+                        combined = str(Seq(combined).reverse_complement())
+
+                    # write
+                    header_location = [
+                        f"{seqid}:{ll}-{lh}({strand})" if len(left_seq) >0 else None,
+                        f"{seqid}:{rl}-{rh}({strand})" if len(right_seq) >0 and not args.whole_seq else None,
+                        ]
+                    # Remove either location if it is irrelevant
+                    header_location = [x for x in header_location if x is not None]
+                    # Join the locations
+                    header_location = "&".join(header_location)
+
+                    # Set the label for the sequence ID
+                    # Determine if the sequence is a promoter and/or terminator
+                    if (len(left_seq) >0 and len(right_seq) >0) or args.whole_seq:
+                        label="flanking"
+                    elif (len(left_seq) >0 and strand == "+") or (len(right_seq) >0 and strand == "-"):
+                        label="promoter"
+                    elif (len(left_seq) >0 and strand == "-") or (len(right_seq) >0 and strand == "+"):
+                        label="terminator"
+                    else:
+                        raise RuntimeError(f"error in determining sequence type for {gene_id}")
+
+                    # Get the extraction options
+                    ex_options = [
+                        f"upstream:{upstream}" if args.upstream is not None else "",
+                        f"inner_start:{inner_start}" if not args.whole_seq else "",
+                        f"inner_end:{inner_end}" if not args.whole_seq else "",
+                        f"downstream:{downstream}" if args.downstream is not None else "",
+                        "whole-seq:True" if args.whole_seq else "",
+                        "use-five-prime-direction:True" if args.use_five_prime_direction else "",
+                    ]
+                    ex_options = [x for x in ex_options if len(x)>0]
+
+                    # Join the options
+                    ex_options = "&".join(ex_options)
+
+                    # Create the header
+                    header = (
+                        f"{gene_id}_{label} genotype={g} gene_name={gene_name} type={args.type}{merge_text} "
+                        f"location={header_location} extraction_options={ex_options}"
+                    )
+                    out_fh.write(f">{header}\n")
+                    for i in range(0, len(combined), 80):
+                        out_fh.write(combined[i:i+80] + "\n")
+
+            # unload FASTA completely
+            fa.close()
+            del fa
+
+        out_fh.close()
 
 
 if __name__ == "__main__":
