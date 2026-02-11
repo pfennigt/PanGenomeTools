@@ -55,6 +55,7 @@ def extract_fasta_header_like(header:Union[str,list,pd.Series], key_prefix:str="
         # Get the chunk range information
         chunk_range = _header_split.loc[:,1].str.split("_").apply(pd.Series).iloc[:,1].str.split("-").apply(pd.Series)
         chunk_range.columns = [f"{key_prefix}{auto_key_prefix}chunk_start", f"{key_prefix}{auto_key_prefix}chunk_end"]
+        chunk_range = chunk_range.astype(int)
 
     # Split the header by certain spaces
     # Replace first occurrence of space
