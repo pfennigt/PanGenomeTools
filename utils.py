@@ -143,13 +143,14 @@ def extract_fasta_header_like(header:Union[str,list,pd.Series], key_prefix:str="
 
     # Set the labels
     if _extract_type.startswith("CDS"):
-        ref_label = np.array(["start codon", "stop codon"])
+        ref_label = np.array(["AUG", "Ter", "AUG/Ter"])
     elif _extract_type.startswith("gene"):
-        ref_label = np.array(["TSS", "TTS"])
+        ref_label = np.array(["TSS", "TTS", "TSS/TTS"])
     else:
-        ref_label = np.array(["<start>", "<end>"])
+        ref_label = np.array(["<start>", "<end>", "<start>/<end>"])
 
-    ref_label = ref_label[list(range(len(ref_pos)))]
+    if len(ref_pos) == 1:
+        ref_label = ref_label[[0]]
 
     # Get the info about the chunk size and their distance
     if chunk_suffix:
