@@ -94,4 +94,81 @@ def extract_fasta_header_like(header:Union[str,list,pd.Series], key_prefix:str="
     # Add the chunk information
     if chunk_suffix:
         info = pd.concat([info, chunk_range], axis=1)
-    return info
+
+
+    # Get meta info about the extraction and chunking
+    # Automatically detect the positions of the sequences
+    extract_info = {
+        
+    }
+    _extract_type = info.loc[0,"type"]
+    _extract_region = info.loc[0,"id"].split("_")[-1]
+    _extract_options = info.loc[0,"extraction_options"]
+    _extract_options = {a:(int(b) if a in ["upstream", "inner_start", "inner_end", "downstream"] else b) for a,b in [x.split(":") for x in _extract_options.split("&")]}
+
+    # Collect the information
+    extract_info = {
+        "type": _extract_type.split("_")[0],
+        "region": _extract_region,
+        "options": _extract_options
+    }
+
+    # Determine if there is a gap
+    if len(_extract_options["pad"]) > 0 and not "whole-seq" in _extract_options:
+        # Get the gap padding and the position
+        pad_len = len(_extract_options["pad"])
+        gap_info = {
+            "gap_start": _extract_options["upstream"] + _extract_options["inner_start"],
+            "gap_pad": pad_len,
+            "gap_pos": _extract_options["upstream"] + _extract_options["inner_start"] + (pad_len // 2)
+        }
+    else:
+        gap_info = None
+        pad_len = 0
+
+    # Determine the positions
+    if _extract_region == "flanking":
+        ref_pos = [
+            _extract_options["upstream"],
+            _extract_options["upstream"] + _extract_options["inner_start"] + pad_len + _extract_options["inner_end"]
+        ]
+    elif _extract_region == "promoter":
+        ref_pos = [
+            _extract_options["upstream"]
+        ]
+    elif _extract_region == "terminator":
+        ref_pos = [
+            _extract_options["inner_end"]
+        ]
+
+    # Set the labels
+    if _extract_type.startswith("CDS"):
+        ref_label = np.array(["start codon", "stop codon"])
+    elif _extract_type.startswith("gene"):
+        ref_label = np.array(["TSS", "TTS"])
+    else:
+        ref_label = np.array(["<start>", "<end>"])
+
+    ref_label = ref_label[list(range(len(ref_pos)))]
+
+    # Get the info about the chunk size and their distance
+    if chunk_suffix:
+        chunk_info = {
+            "chunk_length": info.loc[0, "chunk_end"] - info.loc[0, "chunk_start"] + 1,
+            "window_stride": info.loc[1, "chunk_start"] - info.loc[0, "chunk_start"]
+        }
+    else:
+        chunk_info = None
+
+    # Collect all meta information
+    meta_info = {
+        "extraction": extract_info,
+        "reference_points":{
+            "positions": ref_pos,
+            "labels": ref_label
+        },
+        "gap": gap_info,
+        "chunks": chunk_info,
+    }
+
+    return info, meta_info
