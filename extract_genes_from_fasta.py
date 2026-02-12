@@ -388,6 +388,7 @@ def main():
                         f"downstream:{downstream}" if args.downstream is not None else "",
                         "whole-seq:True" if args.whole_seq else "",
                         "use-five-prime-direction:True" if args.use_five_prime_direction else "",
+                        f"pad:{args.pad}" if not args.whole_seq else "",
                     ]
                     ex_options = [x for x in ex_options if len(x)>0]
 
@@ -396,7 +397,7 @@ def main():
 
                     # Create the header
                     header = (
-                        f"{gene_id}_{label} genotype={g} gene_name={gene_name} type={args.type}{merge_text} "
+                        f"{gene_id}_{label} genotype={g} gene_name={gene_name} type={args.type}{merge_text if merge_text is not None else ''} "
                         f"location={header_location} extraction_options={ex_options}"
                     )
                     out_fh.write(f">{header}\n")
