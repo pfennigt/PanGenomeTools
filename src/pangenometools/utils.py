@@ -173,3 +173,25 @@ def extract_fasta_header_like(header:Union[str,list,pd.Series], key_prefix:str="
     }
 
     return info, meta_info
+
+def get_genotype_alias_map(file_path):
+    # Load the alias map to use common identifiers for the genotypes
+    _genotype_alias_df = pd.read_csv(file_path).fillna("")
+
+    # Add the name of the genotype to the alias list
+    _genotype_alias_df["alias"] = (
+        _genotype_alias_df["id"] + ";" + _genotype_alias_df["alias"]
+    )
+
+    # Set all aliases to uppercase and split the various aliases
+    _genotype_alias_df["alias"] = _genotype_alias_df["alias"].str.upper().str.split(";")
+
+    # Create a mapping to the common names
+    genotype_alias_map = {}
+
+    for _, (name, aliases) in _genotype_alias_df.iterrows():
+        for alias in aliases:
+            if len(alias) > 0:
+                genotype_alias_map[alias] = name
+
+    return genotype_alias_map

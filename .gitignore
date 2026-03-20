@@ -6,3 +6,6 @@ __pycache__
 
 # Ignore test files
 tests
+
+# Ignore build files
+*.egg-info
