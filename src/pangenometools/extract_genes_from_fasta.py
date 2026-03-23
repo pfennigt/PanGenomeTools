@@ -24,6 +24,10 @@ import numpy as np
 from tqdm.auto import tqdm
 from tqdm.contrib import DummyTqdmFile
 import contextlib
+import pandas as pd
+
+import logging
+from utils import setup_logger
 
 try:
     from pyfaidx import Fasta
@@ -189,24 +193,25 @@ def clip_coords(a: int, b: int, seq_len: int):
     b2 = max(1, min(b, seq_len))
     return (a2, b2) if a2 <= b2 else (1, 0)
 
-
-
-def check_coords(ll, lh, rl, rh, seq_len, gene_len, intra_gene_len):
+def check_coords(ll, lh, rl, rh, seq_len, gene_len, intra_gene_len, genelabel):
     # Check if either the left or right window are excluded
     left_excluded = ll==1 and lh==0
     right_excluded = rl==1 and rh==0
 
     # Check that all coordinates are larger than 1
     if (not left_excluded and (ll<1 or lh<1)) or (not right_excluded and (rl <1 or rh<1)):
-        raise ValueError(f"calculated sequence position lower than 1: ll:{ll}, lh:{lh}, rl:{rl}, rh:{rh}")
+        err = f"{genelabel}: calculated sequence position lower than 1: ll:{ll}, lh:{lh}, rl:{rl}, rh:{rh}"
+        raise ValueError(err)
     
     # Check that all coordinates are not longer than the sequence length
     if ll>seq_len or lh>seq_len or rl>seq_len or rh>seq_len:
-        raise ValueError(f"calculated sequence position larger than sequence length ({seq_len}): ll:{ll}, lh:{lh}, rl:{rl}, rh:{rh}") 
+        err = f"{genelabel}: calculated sequence position larger than sequence length ({seq_len}): ll:{ll}, lh:{lh}, rl:{rl}, rh:{rh}"
+        raise ValueError(err) 
 
     # Check that all positions are in the right order
     if (not left_excluded and ll>lh) or (not right_excluded and rl>rh) or (not left_excluded and not right_excluded and gene_len > intra_gene_len and lh>rl):
-        raise ValueError(f"calculated sequence positions not correctly ordered, possible overlap: ll:{ll}, lh:{lh}, rl:{rl}, rh:{rh}")
+        err = f"{genelabel}: calculated sequence positions not correctly ordered, possible overlap: ll:{ll}, lh:{lh}, rl:{rl}, rh:{rh}"
+        raise ValueError(err)
     
     return ll, lh, rl, rh
 
@@ -226,6 +231,18 @@ def std_out_err_redirect_tqdm():
 # ---------------------- main extraction ----------------------
 
 def main():
+    # Set up the loggers
+    InfoLogger = setup_logger("InfoLogger", Path("extraction_info.log"))
+    ErrorLogger = setup_logger("ErrorLogger", Path("extraction_err.log"))
+    GeneErrorLogger = setup_logger("GeneLogger", Path("gene_errors.csv"), formatter=logging.Formatter('%(message)s'))
+
+    # Set the first line of the logger csv
+    GeneErrorLogger.info("genotype,gene,error,skip")
+
+    # Log the starting of extraction
+    InfoLogger.info("Extraction started")
+
+    # Get the command line arguments
     args = parse_args()
 
     if args.whole_seq and (args.inner_start != 0 or args.inner_end != 0):
@@ -251,6 +268,7 @@ def main():
     # --------- PROCESS ONE GENOTYPE AT A TIME (pyfaidx does streaming) ---------
     with std_out_err_redirect_tqdm() as orig_stdout:
         for g in tqdm(genotypes_in_targets, desc="Genotypes", file=orig_stdout, disable=args.silent, dynamic_ncols=True):
+            InfoLogger.info(f"Extracting genotype {g}")
 
             if g not in geno_files:
                 continue
@@ -292,7 +310,12 @@ def main():
                     feat, merge_text = merge_features(feats, strategy="merge")
 
                     if feat is None:
-                        print(f"Warning: gene_id {gene_id} with feature {args.type} not found in {g}" + (" consider sing search_mode 'children' or 'pattern'" if args.search_mode=="strict" else ""), file=sys.stdout)
+                        err = f"gene_id {gene_id} with feature {args.type} not found in {g}" + (" consider sing search_mode 'children' or 'pattern'" if args.search_mode=="strict" else "")
+                        print(err, file=sys.stdout)
+
+                        # Log the error
+                        ErrorLogger.error(err)
+                        GeneErrorLogger.info(f"{g},{gene_id},{err},True")
                         continue
 
                     seqid, start, end, strand, attr = feat
@@ -330,79 +353,95 @@ def main():
                     elif seqid.replace("chr", "") in fa:
                         chrom = seqid.replace("chr", "")
                     else:
-                        print(f"Warning: seqid {seqid} not found in FASTA for {g}", file=sys.stdout)
+                        err = f"seqid {seqid} not found in FASTA for {g}"
+                        # Log the error
+                        ErrorLogger.error(err)
+                        GeneErrorLogger.info(f"{g},{gene_id},{err},True")
                         continue
 
                     seqlen = len(fa[chrom])
 
+                    # Collect the information about the gene for logging
+                    genelabel = f"{gene_id} ({seqid}: {start} - {end}, {strand})"  
+
                     # Check the inputs
-                    ll, lh, rl, rh = check_coords(left_a, left_b, right_a, right_b, seqlen, gene_len=end-start, intra_gene_len=inner_start+inner_end)
+                    try: 
+                        ll, lh, rl, rh = check_coords(left_a, left_b, right_a, right_b, seqlen, gene_len=end-start, intra_gene_len=inner_start+inner_end, genelabel=genelabel)
 
-                    # Warn if the gene is short
-                    if inner_start+inner_end > end-start:
-                        print(f"Warning: gene {gene_id} is shorter than inner_start+inner_end ({end-start} < {inner_start+inner_end})", file=sys.stdout)
+                        # Warn if the gene is short
+                        if inner_start+inner_end > end-start:
+                            err: str = f"gene {gene_id} is shorter than inner_start+inner_end ({end-start} < {inner_start+inner_end})"
+                            
+                            # Log the error
+                            ErrorLogger.warning(err)
+                            GeneErrorLogger.info(f"{g},{gene_id},{err},False")
 
-                    # extract (pyfaidx returns strings)
-                    left_seq = fa[chrom][ll - 1: lh].seq if ll <= lh else ""
-                    right_seq = fa[chrom][rl - 1: rh].seq if rl <= rh else ""
+                        # extract (pyfaidx returns strings)
+                        left_seq = fa[chrom][ll - 1: lh].seq if ll <= lh else ""
+                        right_seq = fa[chrom][rl - 1: rh].seq if rl <= rh else ""
 
-                    # special zero rules
-                    if upstream == 0 and inner_start == 0 and not args.whole_seq:
-                        left_seq = ""
-                    if downstream == 0 and inner_end == 0 and not args.whole_seq:
-                        right_seq = ""
+                        # special zero rules
+                        if upstream == 0 and inner_start == 0 and not args.whole_seq:
+                            left_seq = ""
+                        if downstream == 0 and inner_end == 0 and not args.whole_seq:
+                            right_seq = ""
 
-                    # compose
-                    combined = left_seq + (args.pad if not args.whole_seq else "") + right_seq
+                        # compose
+                        combined = left_seq + (args.pad if not args.whole_seq else "") + right_seq
 
-                    # strand correction
-                    if strand == "-":
-                        combined = str(Seq(combined).reverse_complement())
+                        # strand correction
+                        if strand == "-":
+                            combined = str(Seq(combined).reverse_complement())
 
-                    # write
-                    header_location = [
-                        f"{seqid}:{ll}-{lh}({strand})" if len(left_seq) >0 else None,
-                        f"{seqid}:{rl}-{rh}({strand})" if len(right_seq) >0 and not args.whole_seq else None,
+                        # write
+                        header_location = [
+                            f"{seqid}:{ll}-{lh}({strand})" if len(left_seq) >0 else None,
+                            f"{seqid}:{rl}-{rh}({strand})" if len(right_seq) >0 and not args.whole_seq else None,
+                            ]
+                        # Remove either location if it is irrelevant
+                        header_location = [x for x in header_location if x is not None]
+                        # Join the locations
+                        header_location = "&".join(header_location)
+
+                        # Set the label for the sequence ID
+                        # Determine if the sequence is a promoter and/or terminator
+                        if (len(left_seq) >0 and len(right_seq) >0) or args.whole_seq:
+                            label="flanking"
+                        elif (len(left_seq) >0 and strand == "+") or (len(right_seq) >0 and strand == "-"):
+                            label="promoter"
+                        elif (len(left_seq) >0 and strand == "-") or (len(right_seq) >0 and strand == "+"):
+                            label="terminator"
+                        else:
+                            raise RuntimeError(f"error in determining sequence type for {gene_id}")
+
+                        # Get the extraction options
+                        ex_options = [
+                            f"upstream:{upstream}" if args.upstream is not None else "",
+                            f"inner_start:{inner_start}" if not args.whole_seq else "",
+                            f"inner_end:{inner_end}" if not args.whole_seq else "",
+                            f"downstream:{downstream}" if args.downstream is not None else "",
+                            "whole-seq:True" if args.whole_seq else "",
+                            "use-five-prime-direction:True" if args.use_five_prime_direction else "",
+                            f"pad:{args.pad}" if not args.whole_seq else "",
                         ]
-                    # Remove either location if it is irrelevant
-                    header_location = [x for x in header_location if x is not None]
-                    # Join the locations
-                    header_location = "&".join(header_location)
+                        ex_options = [x for x in ex_options if len(x)>0]
 
-                    # Set the label for the sequence ID
-                    # Determine if the sequence is a promoter and/or terminator
-                    if (len(left_seq) >0 and len(right_seq) >0) or args.whole_seq:
-                        label="flanking"
-                    elif (len(left_seq) >0 and strand == "+") or (len(right_seq) >0 and strand == "-"):
-                        label="promoter"
-                    elif (len(left_seq) >0 and strand == "-") or (len(right_seq) >0 and strand == "+"):
-                        label="terminator"
-                    else:
-                        raise RuntimeError(f"error in determining sequence type for {gene_id}")
+                        # Join the options
+                        ex_options = "&".join(ex_options)
 
-                    # Get the extraction options
-                    ex_options = [
-                        f"upstream:{upstream}" if args.upstream is not None else "",
-                        f"inner_start:{inner_start}" if not args.whole_seq else "",
-                        f"inner_end:{inner_end}" if not args.whole_seq else "",
-                        f"downstream:{downstream}" if args.downstream is not None else "",
-                        "whole-seq:True" if args.whole_seq else "",
-                        "use-five-prime-direction:True" if args.use_five_prime_direction else "",
-                        f"pad:{args.pad}" if not args.whole_seq else "",
-                    ]
-                    ex_options = [x for x in ex_options if len(x)>0]
-
-                    # Join the options
-                    ex_options = "&".join(ex_options)
-
-                    # Create the header
-                    header = (
-                        f"{gene_id}_{label} genotype={g} gene_name={gene_name} type={args.type}{merge_text if merge_text is not None else ''} "
-                        f"location={header_location} extraction_options={ex_options}"
-                    )
-                    out_fh.write(f">{header}\n")
-                    for i in range(0, len(combined), 80):
-                        out_fh.write(combined[i:i+80] + "\n")
+                        # Create the header
+                        header = (
+                            f"{gene_id}_{label} genotype={g} gene_name={gene_name} type={args.type}{merge_text if merge_text is not None else ''} "
+                            f"location={header_location} extraction_options={ex_options}"
+                        )
+                        out_fh.write(f">{header}\n")
+                        for i in range(0, len(combined), 80):
+                            out_fh.write(combined[i:i+80] + "\n")
+                    except Exception as e:
+                        err = str(e)
+                        # Log the error
+                        ErrorLogger.error(err)
+                        GeneErrorLogger.info(f"{g},{gene_id},{err},True")
 
             # unload FASTA completely
             fa.close()
@@ -410,6 +449,7 @@ def main():
 
         out_fh.close()
 
+    InfoLogger.info("Extraction finished")
 
 if __name__ == "__main__":
     main()

@@ -8,6 +8,23 @@ from functools import partial
 
 from typing import Union
 
+import logging
+
+# Set up a logger
+_formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
+def setup_logger(name, log_file, level=logging.INFO, formatter=_formatter):
+    """Get a preexisting logger or create it if it doesn't exist yet"""
+
+    logger = logging.getLogger(name)
+    logger.setLevel(level)
+
+    if len(logger.handlers) == 0:
+        handler = logging.FileHandler(log_file)        
+        handler.setFormatter(formatter)
+        logger.addHandler(handler)
+
+    return logger
+
 # Function to extract information from FASTA-like headers
 def extract_fasta_header_like(header:Union[str,list,pd.Series], key_prefix:str="", auto_key_prefix="_", chunk_suffix:Union[bool,None]=None)->pd.Series:
     """Function to extract information in a FASTA-like header as produced by the "extract_genes" functions. If a list-like of headers is given, it assumes the same structure for ever header.
