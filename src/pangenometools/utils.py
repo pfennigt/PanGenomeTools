@@ -3,6 +3,9 @@
 import re
 import pandas as pd
 import numpy as np
+import sys
+import contextlib
+from tqdm.contrib import DummyTqdmFile
 
 from functools import partial
 
@@ -58,7 +61,7 @@ def extract_fasta_header_like(header:Union[str,list,pd.Series], key_prefix:str="
     header.loc[:,"_hdr"] = header.loc[:,"_hdr"].str.removeprefix(">")
 
     if chunk_suffix is None:
-        chunk_suffix = re.search("_chunk[0-9_\-]+$", header.iloc[0,0])
+        chunk_suffix = re.search("_chunk[0-9_\\-]+$", header.iloc[0,0])
 
     # If there is a chunk suffix, extract it
     if chunk_suffix:
@@ -212,3 +215,17 @@ def get_genotype_alias_map(file_path):
                 genotype_alias_map[alias] = name
 
     return genotype_alias_map
+
+# Define a rerouter for stdout for tqdm
+@contextlib.contextmanager
+def std_out_err_redirect_tqdm():
+    orig_out_err = sys.stdout, sys.stderr
+    try:
+        sys.stdout, sys.stderr = map(DummyTqdmFile, orig_out_err)
+        yield orig_out_err[0]
+    # Relay exceptions
+    except Exception as exc:
+        raise exc
+    # Always restore sys.stdout/err if necessary
+    finally:
+        sys.stdout, sys.stderr = orig_out_err
