@@ -62,6 +62,7 @@ def parse_args():
 
     p.add_argument("--search-mode", default="children")
     p.add_argument("--use-five-prime-direction", action="store_true")
+    p.add_argument("--no-extra-padding", action="store_true")
     p.add_argument("--silent", action="store_true")
 
     p.add_argument("--nworkers", default=1)
@@ -219,6 +220,7 @@ def check_coords(ll, lh, rl, rh, seq_len, gene_len, intra_gene_len, genelabel):
         raise ValueError(err) 
 
     # Check that all positions are in the right order
+    # Exclude the case where the intra gene sequences are overlapping because that is caught before
     if (not left_excluded and ll>lh) or (not right_excluded and rl>rh) or (not left_excluded and not right_excluded and gene_len > intra_gene_len and lh>rl):
         err = f"{genelabel}: calculated sequence positions not correctly ordered, possible overlap: ll:{ll}, lh:{lh}, rl:{rl}, rh:{rh}"
         raise ValueError(err)
@@ -316,6 +318,37 @@ def extract_genome(g, geno_files, target_rows, args) -> None:
                 else:
                     (upstream, inner_start, inner_end, downstream) = (args.upstream, args.inner_start, args.inner_end, args.downstream)
 
+                # Check if the gene is too short to get the requested intra gene region
+                additional_padding = ""
+                genelength = end-start
+                intragenic = inner_start+inner_end
+
+                if intragenic > genelength:
+                    # If no extra padding is requested, get apply continue with the extraction
+                    if args.no_extra_padding:
+                        err: str = f"gene {gene_id} is shorter than inner_start+inner_end ({end-start} < {inner_start+inner_end})"
+                        
+                        # Log the error
+                        ErrorLogger.warning(err)
+                        GeneErrorLogger.info(f"{g},{gene_id},'{err}',False")
+                    else:
+                        # Determine if the inner end region is longer, then place the longer excerpt there
+                        longer_end = inner_end > inner_start
+                        inner_ratio = np.max([inner_start, inner_end]) / intragenic
+
+                        # Otherwise, determine a suitable padding
+                        longer_intra_gene = np.ceil(genelength * inner_ratio)
+                        shorter_intra_gene = intragenic - longer_intra_gene
+                        additional_padding = "N" * (intragenic - genelength)
+
+                        # Redefine the inner parameters
+                        if longer_end:
+                            inner_end = longer_intra_gene
+                            inner_start = shorter_intra_gene
+                        else:
+                            inner_start = longer_intra_gene
+                            inner_end = shorter_intra_gene
+
                 bstart, bend = (start, end)
 
                 # boundaries (exact original logic)
@@ -358,14 +391,6 @@ def extract_genome(g, geno_files, target_rows, args) -> None:
                 try: 
                     ll, lh, rl, rh = check_coords(left_a, left_b, right_a, right_b, seqlen, gene_len=end-start, intra_gene_len=inner_start+inner_end, genelabel=genelabel)
 
-                    # Warn if the gene is short
-                    if inner_start+inner_end > end-start:
-                        err: str = f"gene {gene_id} is shorter than inner_start+inner_end ({end-start} < {inner_start+inner_end})"
-                        
-                        # Log the error
-                        ErrorLogger.warning(err)
-                        GeneErrorLogger.info(f"{g},{gene_id},'{err}',False")
-
                     # extract (pyfaidx returns strings)
                     left_seq = fa[chrom][ll - 1: lh].seq if ll <= lh else ""
                     right_seq = fa[chrom][rl - 1: rh].seq if rl <= rh else ""
@@ -377,7 +402,7 @@ def extract_genome(g, geno_files, target_rows, args) -> None:
                         right_seq = ""
 
                     # compose
-                    combined = left_seq + (args.pad if not args.whole_seq else "") + right_seq
+                    combined = left_seq + ((additional_padding + args.pad) if not args.whole_seq else "") + right_seq
 
                     # strand correction
                     if strand == "-":
@@ -412,7 +437,7 @@ def extract_genome(g, geno_files, target_rows, args) -> None:
                         f"downstream:{downstream}" if args.downstream is not None else "",
                         "whole-seq:True" if args.whole_seq else "",
                         "use-five-prime-direction:True" if args.use_five_prime_direction else "",
-                        f"pad:{args.pad}" if not args.whole_seq else "",
+                        f"pad:{args.pad+additional_padding}" if not args.whole_seq else "",
                     ]
                     ex_options = [x for x in ex_options if len(x)>0]
 
