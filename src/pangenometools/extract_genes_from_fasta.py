@@ -58,7 +58,7 @@ def parse_args():
     p.add_argument("--whole-seq", action="store_true")
     p.add_argument("--inner-start", type=int, default=0)
     p.add_argument("--inner-end", type=int, default=0)
-    p.add_argument("--pad", default="")
+    p.add_argument("--pad", default=0)
 
     p.add_argument("--search-mode", default="children")
     p.add_argument("--use-five-prime-direction", action="store_true")
@@ -253,6 +253,9 @@ def extract_genome(g, geno_files, target_rows, args) -> None:
         # Log the extraction start
         InfoLogger.info(f"Extracting genotype {g}")
 
+        # Get the target sequence length
+        target_len = np.sum([int(x) for x in [args.downstream, args.inner_end, args.inner_start, args.upstream, args.pad]])
+
         # Open a fasta file for the output
         out_fh = open(Path(args.tempdir) / f"{g}.fa", "w")
 
@@ -319,8 +322,8 @@ def extract_genome(g, geno_files, target_rows, args) -> None:
                     (upstream, inner_start, inner_end, downstream) = (args.upstream, args.inner_start, args.inner_end, args.downstream)
 
                 # Check if the gene is too short to get the requested intra gene region
-                additional_padding = ""
-                genelength = end-start
+                additional_padding = 0
+                genelength = 1 + end-start
                 intragenic = inner_start+inner_end
 
                 if intragenic > genelength:
@@ -334,12 +337,12 @@ def extract_genome(g, geno_files, target_rows, args) -> None:
                     else:
                         # Determine if the inner end region is longer, then place the longer excerpt there
                         longer_end = inner_end > inner_start
-                        inner_ratio = np.max([inner_start, inner_end]) / intragenic
+                        inner_ratio = np.min([inner_start, inner_end]) / intragenic
 
                         # Otherwise, determine a suitable padding
-                        longer_intra_gene = np.ceil(genelength * inner_ratio)
-                        shorter_intra_gene = intragenic - longer_intra_gene
-                        additional_padding = "N" * (intragenic - genelength)
+                        shorter_intra_gene = int(np.floor(genelength * inner_ratio))
+                        longer_intra_gene = genelength - shorter_intra_gene
+                        additional_padding = (intragenic - genelength)
 
                         # Redefine the inner parameters
                         if longer_end:
@@ -402,7 +405,11 @@ def extract_genome(g, geno_files, target_rows, args) -> None:
                         right_seq = ""
 
                     # compose
-                    combined = left_seq + ((additional_padding + args.pad) if not args.whole_seq else "") + right_seq
+                    combined = left_seq + (((additional_padding + int(args.pad)) * "N") if not args.whole_seq else "") + right_seq
+
+                    # Check the length is correxct
+                    if len(combined) != target_len:
+                        raise ValueError(f"{genelabel}: calculated sequence length incorrect: ({len(combined)})")
 
                     # strand correction
                     if strand == "-":
@@ -437,7 +444,7 @@ def extract_genome(g, geno_files, target_rows, args) -> None:
                         f"downstream:{downstream}" if args.downstream is not None else "",
                         "whole-seq:True" if args.whole_seq else "",
                         "use-five-prime-direction:True" if args.use_five_prime_direction else "",
-                        f"pad:{args.pad+additional_padding}" if not args.whole_seq else "",
+                        f"pad:{int(args.pad)+additional_padding}" if not args.whole_seq else "",
                     ]
                     ex_options = [x for x in ex_options if len(x)>0]
 
