@@ -93,7 +93,7 @@ def extract_fasta_header_like(header:Union[str,list,pd.Series], key_prefix:str="
     col_names = np.full(info.shape[1], "", dtype="U64")
 
     # Set the first column name as id
-    col_names[0] = f"{key_prefix}{auto_key_prefix}id"
+    col_names[0] = f"{auto_key_prefix}id"
 
     # Determine the column names form the first row
     is_keypair = [False] + (info.iloc[0,1:].str.find("=") > 0).to_list()
@@ -104,8 +104,12 @@ def extract_fasta_header_like(header:Union[str,list,pd.Series], key_prefix:str="
     # Set general names for the remaining columns
     is_remaining = np.invert(is_keypair[1:])
     if np.any(is_remaining):
-        col_names[1:][is_remaining] = [f"{key_prefix}{auto_key_prefix}descriptor{i if i>0 else ''}" for i in range(np.sum(is_remaining))]
-    info.columns = [key_prefix + x for x in col_names]
+        col_names[1:][is_remaining] = [f"{auto_key_prefix}descriptor{i if i>0 else ''}" for i in range(np.sum(is_remaining))]
+    col_names = [key_prefix + x for x in col_names]
+    info.columns = col_names
+
+    print(info)
+    print(col_names)
 
     # Remove the prefixes
     for _name in col_names[1:]:
@@ -116,14 +120,16 @@ def extract_fasta_header_like(header:Union[str,list,pd.Series], key_prefix:str="
         info = pd.concat([info, chunk_range], axis=1)
 
 
+    print(info)
+
     # Get meta info about the extraction and chunking
     # Automatically detect the positions of the sequences
     extract_info = {
         
     }
-    _extract_type = info.loc[0,"type"]
-    _extract_region = info.loc[0,"id"].split("_")[-1]
-    _extract_options = info.loc[0,"extraction_options"]
+    _extract_type = info.loc[0,f"{key_prefix}type"]
+    _extract_region = info.loc[0,f"{key_prefix}{auto_key_prefix}id"].split("_")[-1]
+    _extract_options = info.loc[0,f"{key_prefix}extraction_options"]
     _extract_options = {a:(int(b) if a in ["upstream", "inner_start", "inner_end", "downstream"] else b) for a,b in [x.split(":") for x in _extract_options.split("&")]}
 
     # Collect the information
