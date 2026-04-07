@@ -109,7 +109,7 @@ def read_target_genes(target_path: Path):
 def open_gff(gff_path: Path):
     return gzip.open(gff_path, "rt") if str(gff_path).endswith(".gz") else open(gff_path, "r")
 
-
+# Open and parse a GFF for a certain feature
 def parse_gff_features(gff_path: Path, feature_type: str):
     with open_gff(gff_path) as fh:
         for line in fh:
@@ -133,7 +133,9 @@ def parse_gff_features(gff_path: Path, feature_type: str):
 
             yield seqid, start_i, end_i, strand, attr
 
-def find_feature_for_id(gff_path: Path, feature_type: str, target_id: str, search_mode:str="strict", return_all:bool=False):
+
+
+def find_feature_for_id(gff_feature_dict:dict, target_id: str, search_mode:str="strict", return_all:bool=False):
     if not target_id:
         return None
 
@@ -150,17 +152,22 @@ def find_feature_for_id(gff_path: Path, feature_type: str, target_id: str, searc
 
     res = []
 
-    for seqid, start, end, strand, attr in parse_gff_features(gff_path, feature_type):
+    # Create a copy of the dict to iterate through
+    _gff_feature_dict = gff_feature_dict.copy()
+
+    for i, (seqid, start, end, strand, attr) in _gff_feature_dict.items():
         for v in attr.values():
             if v == target_id or pattern.search(v):
                 if return_all:
+                    gff_feature_dict.pop(i)
                     res.append((seqid, start, end, strand, attr))
                 else:
-                    return [(seqid, start, end, strand, attr)]
+                    gff_feature_dict.pop(i)
+                    return [(seqid, start, end, strand, attr)], gff_feature_dict
     if return_all and len(res) > 0:
-        return res
+        return res, gff_feature_dict
     else:
-        return None
+        return None, gff_feature_dict
 
 
 def merge_features(feats:Union[list,None], strategy="merge") -> Tuple:
@@ -243,234 +250,245 @@ def std_out_err_redirect_tqdm():
 # ---------------------- main extraction ----------------------
 
 def extract_genome(g, geno_files, target_rows, args) -> None:
-    with std_out_err_redirect_tqdm() as orig_stdout:
+    # Get the loggers again
+    InfoLogger = setup_logger("InfoLogger", Path(f"{args.logdir}/extraction_info.log"))
+    ErrorLogger = setup_logger("ErrorLogger", Path(f"{args.logdir}/extraction_err.log"))
+    GeneErrorLogger = setup_logger("GeneLogger", Path(f"{args.logdir}/gene_errors.csv"), formatter=logging.Formatter('%(message)s'))
 
-        # Get the loggers again
-        InfoLogger = setup_logger("InfoLogger", Path(f"{args.logdir}/extraction_info.log"))
-        ErrorLogger = setup_logger("ErrorLogger", Path(f"{args.logdir}/extraction_err.log"))
-        GeneErrorLogger = setup_logger("GeneLogger", Path(f"{args.logdir}/gene_errors.csv"), formatter=logging.Formatter('%(message)s'))
+    # Log the extraction start
+    InfoLogger.info(f"Extracting genotype {g}")
 
-        # Log the extraction start
-        InfoLogger.info(f"Extracting genotype {g}")
+    # Get the target sequence length
+    target_len = np.sum([int(x) for x in [args.downstream, args.inner_end, args.inner_start, args.upstream, args.pad]])
 
-        # Get the target sequence length
-        target_len = np.sum([int(x) for x in [args.downstream, args.inner_end, args.inner_start, args.upstream, args.pad]])
+    # Open a fasta file for the output
+    out_fh = open(Path(args.tempdir) / f"{g}.fa", "w")
 
-        # Open a fasta file for the output
-        out_fh = open(Path(args.tempdir) / f"{g}.fa", "w")
+    if g not in geno_files:
+        return None
 
-        if g not in geno_files:
-            return None
+    gff_path = geno_files[g]["gff"]
+    fasta_path = geno_files[g]["fasta"]
 
-        gff_path = geno_files[g]["gff"]
-        fasta_path = geno_files[g]["fasta"]
+    try:
+        # pyfaidx loads only FASTA index; bases are streamed
+        fa = Fasta(str(fasta_path), rebuild=False)
+    except Exception:
+        # rebuild if missing index
+        fa = Fasta(str(fasta_path), rebuild=True)
 
-        try:
-            # pyfaidx loads only FASTA index; bases are streamed
-            fa = Fasta(str(fasta_path), rebuild=False)
-        except Exception:
-            # rebuild if missing index
-            fa = Fasta(str(fasta_path), rebuild=True)
+    # Get all features with the desired type from the GFF
+    gff_feature_dict = {i: parsed for i, parsed in enumerate(parse_gff_features(gff_path=gff_path, feature_type=args.type))}
 
-        # Create a tqdm description according to the genotype
-        if int(args.nworkers) == 1:
-            tqdm_descr = "Genes    "
-        else:
-            tqdm_descr = f"{g} "
+    # Keep a list with all processed gene ids to skip duplicates
+    processed_gene_ids = set()
 
-        # Process all rows referring to this genotype
-        for row in tqdm(target_rows, desc=tqdm_descr, leave=False, file=orig_stdout, disable=(args.silent or int(args.nworkers) > 1), dynamic_ncols=True):
+    # Create a tqdm description according to the genotype
+    if int(args.nworkers) == 1:
+        tqdm_descr = "Genes    "
+    else:
+        tqdm_descr = f"{g} "
 
-            gene_name = row.get("gene_name", "")
-            gene_id_raw = row.get(f"gene_ID_{g}", "")
-            if not gene_id_raw or gene_id_raw in ["", "[]", "[\"\"]", "['']"]:
+    # Process all rows referring to this genotype
+    for row in tqdm(target_rows, desc=tqdm_descr, leave=False, file=sys.stdout, disable=(args.silent or int(args.nworkers) > 1), dynamic_ncols=True):
+
+        gene_name = row.get("gene_name", "")
+        gene_id_raw = row.get(f"gene_ID_{g}", "")
+        if not gene_id_raw or gene_id_raw in ["", "[]", "[\"\"]", "['']"]:
+            continue
+
+        # Strip potential whitespaces in the gene ID
+        gene_id_raw = gene_id_raw.strip()
+
+        # If gene_id is a list, extract all of them
+        if gene_id_raw[0] == "[":
+            gene_id_raw = gene_id_raw[1:-1].split(",")
+
+        for gene_id in gene_id_raw:
+            # Remove spaces and quotation marks
+            gene_id = gene_id.strip()
+            gene_id = re.sub("[\"|']", "", gene_id)
+
+            # Add the gene ID to the list of processed ones
+            # If it already exists, skip it
+            if gene_id not in processed_gene_ids:
+                processed_gene_ids.add(gene_id)
+            else:
                 continue
 
-            # Strip potential whitespaces in the gene ID
-            gene_id_raw = gene_id_raw.strip()
+            # Get all the features
+            feats, gff_feature_dict = find_feature_for_id(gff_feature_dict, gene_id, search_mode=args.search_mode, return_all=True)
 
-            # If gene_id is a list, extract all of them
-            if gene_id_raw[0] == "[":
-                gene_id_raw = gene_id_raw[1:-1].split(",")
+            # Merge the features
+            feat, merge_text = merge_features(feats, strategy="merge")
 
-            for gene_id in gene_id_raw:
-                # Remove spaces and quotation marks
-                gene_id = gene_id.strip()
-                gene_id = re.sub("[\"|']", "", gene_id)
+            if feat is None:
+                err = f"gene_id {gene_id} with feature {args.type} not found in {g}" + (" consider sing search_mode 'children' or 'pattern'" if args.search_mode=="strict" else "")
+                print(err, file=sys.stdout)
 
-                # Get all the features
-                feats = find_feature_for_id(gff_path, args.type, gene_id, search_mode=args.search_mode, return_all=True)
+                # Log the error
+                ErrorLogger.error(err)
+                GeneErrorLogger.info(f"{g},{gene_id},'{err}',True")
+                continue
 
-                # Merge the features
-                feat, merge_text = merge_features(feats, strategy="merge")
+            seqid, start, end, strand, attr = feat
 
-                if feat is None:
-                    err = f"gene_id {gene_id} with feature {args.type} not found in {g}" + (" consider sing search_mode 'children' or 'pattern'" if args.search_mode=="strict" else "")
-                    print(err, file=sys.stdout)
+            # Switch left and right windows if the feature is on the reverse strand
+            if not args.use_five_prime_direction and strand == "-":
+                (upstream, inner_start, inner_end, downstream) = (args.downstream, args.inner_end, args.inner_start, args.upstream)
+            else:
+                (upstream, inner_start, inner_end, downstream) = (args.upstream, args.inner_start, args.inner_end, args.downstream)
 
+            # Check if the gene is too short to get the requested intra gene region
+            additional_padding = 0
+            genelength = 1 + end-start
+            intragenic = inner_start+inner_end
+
+            if intragenic > genelength:
+                # If no extra padding is requested, get apply continue with the extraction
+                if args.no_extra_padding:
+                    err: str = f"gene {gene_id} is shorter than inner_start+inner_end ({end-start} < {inner_start+inner_end})"
+                    
                     # Log the error
-                    ErrorLogger.error(err)
-                    GeneErrorLogger.info(f"{g},{gene_id},'{err}',True")
-                    continue
-
-                seqid, start, end, strand, attr = feat
-
-                # Switch left and right windows if the feature is on the reverse strand
-                if not args.use_five_prime_direction and strand == "-":
-                    (upstream, inner_start, inner_end, downstream) = (args.downstream, args.inner_end, args.inner_start, args.upstream)
+                    ErrorLogger.warning(err)
+                    GeneErrorLogger.info(f"{g},{gene_id},'{err}',False")
                 else:
-                    (upstream, inner_start, inner_end, downstream) = (args.upstream, args.inner_start, args.inner_end, args.downstream)
+                    # Determine if the inner end region is longer, then place the longer excerpt there
+                    longer_end = inner_end > inner_start
+                    inner_ratio = np.min([inner_start, inner_end]) / intragenic
 
-                # Check if the gene is too short to get the requested intra gene region
-                additional_padding = 0
-                genelength = 1 + end-start
-                intragenic = inner_start+inner_end
+                    # Otherwise, determine a suitable padding
+                    shorter_intra_gene = int(np.floor(genelength * inner_ratio))
+                    longer_intra_gene = genelength - shorter_intra_gene
+                    additional_padding = (intragenic - genelength)
 
-                if intragenic > genelength:
-                    # If no extra padding is requested, get apply continue with the extraction
-                    if args.no_extra_padding:
-                        err: str = f"gene {gene_id} is shorter than inner_start+inner_end ({end-start} < {inner_start+inner_end})"
-                        
-                        # Log the error
-                        ErrorLogger.warning(err)
-                        GeneErrorLogger.info(f"{g},{gene_id},'{err}',False")
+                    # Redefine the inner parameters
+                    if longer_end:
+                        inner_end = longer_intra_gene
+                        inner_start = shorter_intra_gene
                     else:
-                        # Determine if the inner end region is longer, then place the longer excerpt there
-                        longer_end = inner_end > inner_start
-                        inner_ratio = np.min([inner_start, inner_end]) / intragenic
+                        inner_start = longer_intra_gene
+                        inner_end = shorter_intra_gene
 
-                        # Otherwise, determine a suitable padding
-                        shorter_intra_gene = int(np.floor(genelength * inner_ratio))
-                        longer_intra_gene = genelength - shorter_intra_gene
-                        additional_padding = (intragenic - genelength)
+            bstart, bend = (start, end)
 
-                        # Redefine the inner parameters
-                        if longer_end:
-                            inner_end = longer_intra_gene
-                            inner_start = shorter_intra_gene
-                        else:
-                            inner_start = longer_intra_gene
-                            inner_end = shorter_intra_gene
+            # boundaries (exact original logic)
+            left_a = bstart - upstream
+            left_b = bstart + inner_start - 1
 
-                bstart, bend = (start, end)
+            right_a = bend - inner_end + 1
+            right_b = bend + downstream
 
-                # boundaries (exact original logic)
-                left_a = bstart - upstream
-                left_b = bstart + inner_start - 1
+            # Use the maximum range of whole-seq is given
+            if args.whole_seq:
+                left_a = np.min([left_a, right_b])
+                left_b = np.max([left_a, right_b])
+                right_a, right_b = 1, 0
+            elif upstream==0 and inner_start==0:
+                left_a, left_b = 1, 0
+            elif downstream==0 and inner_end==0:
+                right_a, right_b = 1, 0
 
-                right_a = bend - inner_end + 1
-                right_b = bend + downstream
+            # find the correct chromosome name
+            if seqid in fa:
+                chrom = seqid
+            elif "chr" + seqid in fa:
+                chrom = "chr" + seqid
+            elif seqid.replace("chr", "") in fa:
+                chrom = seqid.replace("chr", "")
+            else:
+                err = f"seqid {seqid} not found in FASTA for {g}"
+                # Log the error
+                ErrorLogger.error(err)
+                GeneErrorLogger.info(f"{g},{gene_id},'{err}',True")
+                continue
 
-                # Use the maximum range of whole-seq is given
-                if args.whole_seq:
-                    left_a = np.min([left_a, right_b])
-                    left_b = np.max([left_a, right_b])
-                    right_a, right_b = 1, 0
-                elif upstream==0 and inner_start==0:
-                    left_a, left_b = 1, 0
-                elif downstream==0 and inner_end==0:
-                    right_a, right_b = 1, 0
+            seqlen = len(fa[chrom])
 
-                # find the correct chromosome name
-                if seqid in fa:
-                    chrom = seqid
-                elif "chr" + seqid in fa:
-                    chrom = "chr" + seqid
-                elif seqid.replace("chr", "") in fa:
-                    chrom = seqid.replace("chr", "")
-                else:
-                    err = f"seqid {seqid} not found in FASTA for {g}"
-                    # Log the error
-                    ErrorLogger.error(err)
-                    GeneErrorLogger.info(f"{g},{gene_id},'{err}',True")
-                    continue
+            # Collect the information about the gene for logging
+            genelabel = f"{gene_id} ({seqid}: {start} - {end}, {strand})"  
 
-                seqlen = len(fa[chrom])
+            # Check the inputs
+            try: 
+                ll, lh, rl, rh = check_coords(left_a, left_b, right_a, right_b, seqlen, gene_len=end-start, intra_gene_len=inner_start+inner_end, genelabel=genelabel)
 
-                # Collect the information about the gene for logging
-                genelabel = f"{gene_id} ({seqid}: {start} - {end}, {strand})"  
+                # extract (pyfaidx returns strings)
+                left_seq = fa[chrom][ll - 1: lh].seq if ll <= lh else ""
+                right_seq = fa[chrom][rl - 1: rh].seq if rl <= rh else ""
 
-                # Check the inputs
-                try: 
-                    ll, lh, rl, rh = check_coords(left_a, left_b, right_a, right_b, seqlen, gene_len=end-start, intra_gene_len=inner_start+inner_end, genelabel=genelabel)
+                # special zero rules
+                if upstream == 0 and inner_start == 0 and not args.whole_seq:
+                    left_seq = ""
+                if downstream == 0 and inner_end == 0 and not args.whole_seq:
+                    right_seq = ""
 
-                    # extract (pyfaidx returns strings)
-                    left_seq = fa[chrom][ll - 1: lh].seq if ll <= lh else ""
-                    right_seq = fa[chrom][rl - 1: rh].seq if rl <= rh else ""
+                # compose
+                combined = left_seq + (((additional_padding + int(args.pad)) * "N") if not args.whole_seq else "") + right_seq
 
-                    # special zero rules
-                    if upstream == 0 and inner_start == 0 and not args.whole_seq:
-                        left_seq = ""
-                    if downstream == 0 and inner_end == 0 and not args.whole_seq:
-                        right_seq = ""
+                # Check the length is correxct
+                if len(combined) != target_len:
+                    raise ValueError(f"{genelabel}: calculated sequence length incorrect: ({len(combined)})")
 
-                    # compose
-                    combined = left_seq + (((additional_padding + int(args.pad)) * "N") if not args.whole_seq else "") + right_seq
+                # strand correction
+                if strand == "-":
+                    combined = str(Seq(combined).reverse_complement())
 
-                    # Check the length is correxct
-                    if len(combined) != target_len:
-                        raise ValueError(f"{genelabel}: calculated sequence length incorrect: ({len(combined)})")
-
-                    # strand correction
-                    if strand == "-":
-                        combined = str(Seq(combined).reverse_complement())
-
-                    # write
-                    header_location = [
-                        f"{seqid}:{ll}-{lh}({strand})" if len(left_seq) >0 else None,
-                        f"{seqid}:{rl}-{rh}({strand})" if len(right_seq) >0 and not args.whole_seq else None,
-                        ]
-                    # Remove either location if it is irrelevant
-                    header_location = [x for x in header_location if x is not None]
-                    # Join the locations
-                    header_location = "&".join(header_location)
-
-                    # Set the label for the sequence ID
-                    # Determine if the sequence is a promoter and/or terminator
-                    if (len(left_seq) >0 and len(right_seq) >0) or args.whole_seq:
-                        label="flanking"
-                    elif (len(left_seq) >0 and strand == "+") or (len(right_seq) >0 and strand == "-"):
-                        label="promoter"
-                    elif (len(left_seq) >0 and strand == "-") or (len(right_seq) >0 and strand == "+"):
-                        label="terminator"
-                    else:
-                        raise RuntimeError(f"error in determining sequence type for {gene_id}")
-
-                    # Get the extraction options
-                    ex_options = [
-                        f"upstream:{upstream}" if args.upstream is not None else "",
-                        f"inner_start:{inner_start}" if not args.whole_seq else "",
-                        f"inner_end:{inner_end}" if not args.whole_seq else "",
-                        f"downstream:{downstream}" if args.downstream is not None else "",
-                        "whole-seq:True" if args.whole_seq else "",
-                        "use-five-prime-direction:True" if args.use_five_prime_direction else "",
-                        f"pad:{int(args.pad)+additional_padding}" if not args.whole_seq else "",
+                # write
+                header_location = [
+                    f"{seqid}:{ll}-{lh}({strand})" if len(left_seq) >0 else None,
+                    f"{seqid}:{rl}-{rh}({strand})" if len(right_seq) >0 and not args.whole_seq else None,
                     ]
-                    ex_options = [x for x in ex_options if len(x)>0]
+                # Remove either location if it is irrelevant
+                header_location = [x for x in header_location if x is not None]
+                # Join the locations
+                header_location = "&".join(header_location)
 
-                    # Join the options
-                    ex_options = "&".join(ex_options)
+                # Set the label for the sequence ID
+                # Determine if the sequence is a promoter and/or terminator
+                if (len(left_seq) >0 and len(right_seq) >0) or args.whole_seq:
+                    label="flanking"
+                elif (len(left_seq) >0 and strand == "+") or (len(right_seq) >0 and strand == "-"):
+                    label="promoter"
+                elif (len(left_seq) >0 and strand == "-") or (len(right_seq) >0 and strand == "+"):
+                    label="terminator"
+                else:
+                    raise RuntimeError(f"error in determining sequence type for {gene_id}")
 
-                    # Create the header
-                    header = (
-                        f"{gene_id}_{label} genotype={g} gene_name={gene_name} type={args.type}{merge_text if merge_text is not None else ''} "
-                        f"location={header_location} extraction_options={ex_options}"
-                    )
-                    out_fh.write(f">{header}\n")
-                    for i in range(0, len(combined), 80):
-                        out_fh.write(combined[i:i+80] + "\n")
-                except Exception as e:
-                    err = str(e)
-                    # Log the error
-                    ErrorLogger.error(err)
-                    GeneErrorLogger.info(f"{g},{gene_id},'{err}',True")
+                # Get the extraction options
+                ex_options = [
+                    f"upstream:{upstream}" if args.upstream is not None else "",
+                    f"inner_start:{inner_start}" if not args.whole_seq else "",
+                    f"inner_end:{inner_end}" if not args.whole_seq else "",
+                    f"downstream:{downstream}" if args.downstream is not None else "",
+                    "whole-seq:True" if args.whole_seq else "",
+                    "use-five-prime-direction:True" if args.use_five_prime_direction else "",
+                    f"pad:{int(args.pad)+additional_padding}" if not args.whole_seq else "",
+                ]
+                ex_options = [x for x in ex_options if len(x)>0]
 
-        # unload FASTA completely
-        fa.close()
-        del fa
+                # Join the options
+                ex_options = "&".join(ex_options)
 
-        # Close the genotype fasta
-        out_fh.close()
+                # Create the header
+                header = (
+                    f"{gene_id}_{label} genotype={g} gene_name={gene_name} type={args.type}{merge_text if merge_text is not None else ''} "
+                    f"location={header_location} extraction_options={ex_options}"
+                )
+                out_fh.write(f">{header}\n")
+                for i in range(0, len(combined), 80):
+                    out_fh.write(combined[i:i+80] + "\n")
+            except Exception as e:
+                err = str(e)
+                # Log the error
+                ErrorLogger.error(err)
+                GeneErrorLogger.info(f"{g},{gene_id},'{err}',True")
+
+    # unload FASTA completely
+    fa.close()
+    del fa
+
+    # Close the genotype fasta
+    out_fh.close()
 
 def main():
     # Get the command line arguments
@@ -517,7 +535,7 @@ def main():
     if int(args.nworkers) == 1:
         with std_out_err_redirect_tqdm() as orig_stdout:
             for g in tqdm(genotypes_in_targets, desc="Genotypes", file=orig_stdout, disable=args.silent, dynamic_ncols=True):
-                _extract_genome(enumerate(g))
+                _extract_genome(g)
 
     else:
         # Process the genotypes using parallel processing
