@@ -108,19 +108,13 @@ def extract_fasta_header_like(header:Union[str,list,pd.Series], key_prefix:str="
     col_names = [key_prefix + x for x in col_names]
     info.columns = col_names
 
-    print(info)
-    print(col_names)
-
     # Remove the prefixes
     for _name in col_names[1:]:
-        info.loc[:, _name] = info.loc[:, _name].str.removeprefix(f"{_name}=")
+        info.loc[:, _name] = info.loc[:, _name].str.removeprefix(f"{_name.removeprefix(key_prefix)}=")
 
     # Add the chunk information
     if chunk_suffix:
         info = pd.concat([info, chunk_range], axis=1)
-
-
-    print(info)
 
     # Get meta info about the extraction and chunking
     # Automatically detect the positions of the sequences
