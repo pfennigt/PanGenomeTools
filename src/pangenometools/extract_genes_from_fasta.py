@@ -50,7 +50,8 @@ def parse_args():
     p.add_argument("--pangenome_folder", required=True)
     p.add_argument("--pangenome_index", required=True)
     p.add_argument("--target_genes", required=True)
-    p.add_argument("--output", required=True)
+    p.add_argument("--output")
+    p.add_argument("--output_dir")
 
     p.add_argument("--type", default="gene")
     p.add_argument("--upstream", type=int, default=0)
@@ -64,10 +65,11 @@ def parse_args():
     p.add_argument("--use-five-prime-direction", action="store_true")
     p.add_argument("--no-extra-padding", action="store_true")
     p.add_argument("--silent", action="store_true")
+    p.add_argument("--per-gene-group", action="store_true")
 
     p.add_argument("--nworkers", default=1)
     p.add_argument("--tempdir", default="tmp")
-    p.add_argument("--logdir", default=".")
+    p.add_argument("--logdir", default="logs")
 
     return p.parse_args()
 
@@ -261,8 +263,15 @@ def extract_genome(g, geno_files, target_rows, args) -> None:
     # Get the target sequence length
     target_len = np.sum([int(x) for x in [args.downstream, args.inner_end, args.inner_start, args.upstream, args.pad]])
 
-    # Open a fasta file for the output
-    out_fh = open(Path(args.tempdir) / f"{g}.fa", "w")
+    # If all sequences should go into a single file, open one
+    if not args.per_gene_group:
+        # Open a fasta file for the output
+        out_fh = open(Path(args.tempdir) / f"{g}.fa", "w")
+    else:
+        # Create a folder in the temp directory for the extracted sequences
+        seqdir = Path(args.tempdir) / str(g)
+        seqdir.mkdir(exist_ok=True, parents=True)
+
 
     if g not in geno_files:
         return None
@@ -296,6 +305,10 @@ def extract_genome(g, geno_files, target_rows, args) -> None:
         gene_id_raw = row.get(f"gene_ID_{g}", "")
         if not gene_id_raw or gene_id_raw in ["", "[]", "[\"\"]", "['']"]:
             continue
+
+        # If a single file should be used per gene group, open a FASTA
+        if args.per_gene_group:
+            out_fh = open(seqdir / f"{gene_name}.fa", "w")
 
         # Strip potential whitespaces in the gene ID
         gene_id_raw = gene_id_raw.strip()
@@ -483,16 +496,33 @@ def extract_genome(g, geno_files, target_rows, args) -> None:
                 ErrorLogger.error(err)
                 GeneErrorLogger.info(f"{g},{gene_id},'{err}',True")
 
+        if not args.per_gene_group:
+            # Close the genotype fasta
+            out_fh.close()
+
     # unload FASTA completely
     fa.close()
     del fa
 
-    # Close the genotype fasta
-    out_fh.close()
+    if not args.per_gene_group:
+        # Close the genotype fasta
+        out_fh.close()
 
 def main():
     # Get the command line arguments
     args = parse_args()
+
+    # Check if an output was given
+    if not args.per_gene_group:
+        if args.output is None:
+            raise ValueError("And output file must be specified with '--output'")
+    else:
+        if args.output_dir is None:
+            raise ValueError("And output directory must be specified with '--output-dir'")
+
+    # Create the log directory if necessary
+    logdir = Path(args.logdir)
+    logdir.mkdir(exist_ok=True, parents=True)
 
     # Set up the loggers
     InfoLogger = setup_logger("InfoLogger", Path(f"{args.logdir}/extraction_info.log"))
@@ -552,11 +582,28 @@ def main():
                         pbar.update(1)
                         break
 
-    # Concatenate all files
-    with open(args.output, "wb") as outfile:
-        for g in genotypes_in_targets:
-            with open(Path(args.tempdir)/f"{g}.fa", "rb") as infile:
-                outfile.write(infile.read())
+    if not args.per_gene_group:
+        # Concatenate all files
+        with open(args.output, "w") as outfile:
+            for g in genotypes_in_targets:
+                with open(Path(args.tempdir)/f"{g}.fa", "r") as infile:
+                    outfile.write(infile.read())
+    else:
+        # Concatenate the files per gene group
+        for row in target_rows:
+            gene_name = row.get("gene_name", "")
+
+            with open(Path(args.output_dir) / f"{gene_name}.fa", "w") as outfile:
+                for g in genotypes_in_targets:
+                    try:
+                        with open(Path(args.tempdir)/f"{g}/{gene_name}.fa", "r") as infile:
+                            outfile.write(infile.read())
+
+                    except Exception as e:
+                        pass
+
+
+
 
     InfoLogger.info("Extraction finished")
 
