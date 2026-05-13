@@ -11,7 +11,7 @@ import argparse
 # --- AGAT base command ---
 AGAT_CMD = (
     "agat_sp_extract_sequences.pl "
-    "-g {annotation} -f {genome} -t gene "
+    "-g {annotation} -f {genome} -t {type} "
     "{extra} "
     "-o {output}"
 )
@@ -31,6 +31,7 @@ def std_out_err_redirect_tqdm():
 def extract_transcriptome(pangenome_index: pd.DataFrame,
                           pangenome_dir: Path,
                           output_dir: Path,
+                          type:str,
                           extra_args: str,
                           tqdm_file=None):
     """Run AGAT for each genome listed in the index."""
@@ -60,6 +61,7 @@ def extract_transcriptome(pangenome_index: pd.DataFrame,
         cmd = AGAT_CMD.format(
             annotation=annotation.resolve(),
             genome=genome.resolve(),
+            type=type,
             extra=extra_args,
             output=out_fa
         )
@@ -73,6 +75,11 @@ def extract_transcriptome(pangenome_index: pd.DataFrame,
             log_file = Path(f"{annotation.stem}.agat.log")
             if log_file.exists():
                 log_file.rename(logs_dir / log_file.name)
+
+            # Move AGAT log folder if it exists
+            log_folder = Path(f"agat_log_{annotation.stem}")
+            if log_folder.exists():
+                log_folder.rename(logs_dir / log_folder.name)
 
         except subprocess.CalledProcessError as e:
             print(f"❌ AGAT failed for {genotype}: {e}", file=sys.stdout)
@@ -100,6 +107,12 @@ def main():
     )
 
     parser.add_argument(
+        "--type",
+        default="gene",
+        help="Type of feature to extract (default: 'gene')"
+    )
+
+    parser.add_argument(
         "--extra",
         default="",
         help="Additional arguments to pass to AGAT (e.g. '--upstream 1000 --downstream 1000')"
@@ -122,6 +135,7 @@ def main():
             pangenome_index,
             pangenome_dir,
             output_dir,
+            args.type,
             args.extra,
             tqdm_file=orig_stdout
         )
