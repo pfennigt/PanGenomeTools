@@ -6,12 +6,16 @@ import numpy as np
 import sys
 import contextlib
 from tqdm.contrib import DummyTqdmFile
+import csv
+from pathlib import Path
 
 from functools import partial
 
 from typing import Union
 
 import logging
+
+from typing import Dict
 
 # Set up a logger
 _formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
@@ -229,3 +233,19 @@ def std_out_err_redirect_tqdm():
     # Always restore sys.stdout/err if necessary
     finally:
         sys.stdout, sys.stderr = orig_out_err
+
+# Reader for the pangenome index
+def read_index(index_path: Path) -> Dict[str, Dict[str, str]]:
+    d = {}
+    with open(index_path, newline="") as fh:
+        reader = csv.DictReader(fh)
+        required = {"genotype", "annotation", "assembly"}
+        if not required.issubset(reader.fieldnames or []):
+            raise ValueError(f"pangenome_index.csv must contain columns {required}")
+        for r in reader:
+            d[r["genotype"]] = {
+                "annotation": r["annotation"],
+                "assembly": r["assembly"],
+            }
+    return d
+
