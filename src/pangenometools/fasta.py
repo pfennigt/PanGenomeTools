@@ -508,6 +508,71 @@ def extract_genome(g, geno_files, target_rows, args) -> None:
         # Close the genotype fasta
         out_fh.close()
 
+# --- AGAT base command ---
+AGAT_CMD = (
+    "agat_sp_extract_sequences.pl "
+    "-g {annotation} -f {genome} -t {type} "
+    "{extra} "
+    "-o {output}"
+)
+
+# Extraction with AGAT
+def extract_transcriptome(pangenome_index: pd.DataFrame,
+                          pangenome_dir: Path,
+                          output_dir: Path,
+                          type:str,
+                          extra_args: str,
+                          tqdm_file=None):
+    """Run AGAT for each genome listed in the index."""
+    
+    logs_dir = output_dir / "logs"
+    logs_dir.mkdir(parents=True, exist_ok=True)
+
+    for genotype, row in tqdm(pangenome_index.iterrows(),
+                              total=pangenome_index.shape[0],
+                              file=tqdm_file):
+
+        annotation = pangenome_dir / row["annotation"]
+        genome = pangenome_dir / row["assembly"]
+        out_fa = output_dir / f"{genotype}.fa"
+
+        if out_fa.exists() and out_fa.stat().st_size > 0:
+            print(f"✅ {genotype}: already extracted ({out_fa})", file=sys.stdout)
+            continue
+
+        if not annotation.exists():
+            print(f"⚠️ Missing annotation: {annotation}", file=sys.stdout)
+            continue
+        if not genome.exists():
+            print(f"⚠️ Missing genome: {genome}", file=sys.stdout)
+            continue
+
+        cmd = AGAT_CMD.format(
+            annotation=annotation.resolve(),
+            genome=genome.resolve(),
+            type=type,
+            extra=extra_args,
+            output=out_fa
+        )
+
+        print(f"\n🔹 Extracting transcriptome for {genotype} ...", file=sys.stdout)
+
+        try:
+            subprocess.run(cmd, shell=True, check=True)
+
+            # Move AGAT log file if it exists
+            log_file = Path(f"{annotation.stem}.agat.log")
+            if log_file.exists():
+                log_file.rename(logs_dir / log_file.name)
+
+            # Move AGAT log folder if it exists
+            log_folder = Path(f"agat_log_{annotation.stem}")
+            if log_folder.exists():
+                log_folder.rename(logs_dir / log_folder.name)
+
+        except subprocess.CalledProcessError as e:
+            print(f"❌ AGAT failed for {genotype}: {e}", file=sys.stdout)
+
 def main():
     # Get the command line arguments
     args = parse_args()
