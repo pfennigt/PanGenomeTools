@@ -34,10 +34,7 @@ test1,test.gff,test.fa
 """
 
     # Create FASTA file
-    fasta_content = """>chr1
-ATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCG
-ATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCG
-"""
+    fasta_content = ">chr1\n" + "ATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCG\n" * 20
 
     # Write files
     (temp_test_dir / "test.gff").write_text(gff_content)
