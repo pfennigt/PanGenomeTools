@@ -39,7 +39,7 @@ class GFFHandler(PangenomeFileHandler):
             PyRanges object containing GFF features
         """
         gff_path = self.resolve_path(genotype, "annotation")
-        features = pr.read_gff(gff_path)
+        features = pr.read_gff3(gff_path)
         return features if feature_type is None else features.features[feature_type]
 
     def get_features_for_gene(self,

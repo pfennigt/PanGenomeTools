@@ -4,8 +4,5 @@ __pycache__
 # Ignore .vscode
 .vscode
 
-# Ignore test files
-tests
-
 # Ignore build files
 *.egg-info
