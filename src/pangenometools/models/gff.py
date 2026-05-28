@@ -77,7 +77,7 @@ class GFFHandler(PangenomeFileHandler):
             return gene_features
 
         # Find all features of the requested type that are children of this gene
-        gene_children = all_features[all_features.Parent == gene_id]
+        gene_children = all_features[(all_features.Parent == gene_id) | (all_features.ID == gene_id)]
 
         if feature_type != "all":
             gene_children = gene_children[gene_children.Feature == feature_type]
