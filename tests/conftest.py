@@ -36,9 +36,15 @@ test1,test.gff,test.fa
     # Create FASTA file
     fasta_content = ">chr1\n" + "ATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCGATCG\n" * 20
 
+    # Create target genes file
+    target_content = """gene_name,gene_ID_test1
+GENE001,GENE001
+GENE002,GENE002"""
+
     # Write files
     (temp_test_dir / "test.gff").write_text(gff_content)
     (temp_test_dir / "index.csv").write_text(index_content)
     (temp_test_dir / "test.fa").write_text(fasta_content)
+    (temp_test_dir / "target_genes.csv").write_text(target_content)
 
     return temp_test_dir
