@@ -261,7 +261,8 @@ def calculate_coordinate_boundaries(
     inner_start: int = 0,
     inner_end: int = 0,
     whole_seq: bool = False,
-    use_five_prime_direction: bool = False
+    use_five_prime_direction: bool = False,
+    no_extra_padding: bool = False,
 ) -> Tuple[int, int, int, int]:
     """
     Calculate coordinate boundaries for sequence extraction.
@@ -278,33 +279,63 @@ def calculate_coordinate_boundaries(
         use_five_prime_direction: If True, always interpret upstream/downstream
                                    in 5' direction regardless of strand.
                                    If False, reverse upstream/downstream for negative strand.
+        no_extra_padding: If the sum of inner_start and inner_end is longer than
+                            the gene, raise an error instead of adding padding
     
     Returns:
         Tuple of (left_a, left_b, right_a, right_b) coordinates
     """
-    # Interior coordinate logic
-    bstart, bend = (end, start) if strand == "-" else (start, end)
-
-    if whole_seq:
-        left_a, left_b = min(start, end), max(start, end)
-        right_a, right_b = 1, 0
+    # Switch left and right windows if the feature is on the reverse strand
+    if not use_five_prime_direction and strand == "-":
+        (upstream, inner_start, inner_end, downstream) = (downstream, inner_end, inner_start, upstream)
     else:
-        # Determine direction based on strand and use_five_prime_direction
-        if use_five_prime_direction:
-            # Always use 5' direction (upstream = 5', downstream = 3')
-            (upstream, inner_start, inner_end, downstream) = (upstream, inner_start, inner_end, downstream)
-        elif strand == "-":
-            # For negative strand without use_five_prime_direction, reverse the direction
-            (upstream, inner_start, inner_end, downstream) = (downstream, inner_end, inner_start, upstream)
-        else:
-            # For positive strand, use as-is
-            (upstream, inner_start, inner_end, downstream) = (upstream, inner_start, inner_end, downstream)
+        (upstream, inner_start, inner_end, downstream) = (upstream, inner_start, inner_end, downstream)
 
-        left_a = bstart - upstream
-        left_b = bstart + inner_start - 1
-        
-        right_a = bend - inner_end + 1
-        right_b = bend + downstream
+    # Check if the gene is too short to get the requested intra gene region
+    additional_padding = 0
+    genelength = 1 + end-start
+    intragenic = inner_start+inner_end
+
+    if intragenic > genelength:
+        # If no extra padding is requested, get apply continue with the extraction
+        if no_extra_padding:
+            raise ValueError(f"gene is shorter than inner_start+inner_end ({end-start} < {inner_start+inner_end})")
+        else:
+            # Determine if the inner end region is longer, then place the longer excerpt there
+            longer_end = inner_end > inner_start
+            inner_ratio = np.min([inner_start, inner_end]) / intragenic
+
+            # Otherwise, determine a suitable padding
+            shorter_intra_gene = int(np.floor(genelength * inner_ratio))
+            longer_intra_gene = genelength - shorter_intra_gene
+            additional_padding = (intragenic - genelength)
+
+            # Redefine the inner parameters
+            if longer_end:
+                inner_end = longer_intra_gene
+                inner_start = shorter_intra_gene
+            else:
+                inner_start = longer_intra_gene
+                inner_end = shorter_intra_gene
+
+    bstart, bend = (start, end)
+
+    # boundaries (exact original logic)
+    left_a = bstart - upstream
+    left_b = bstart + inner_start - 1
+
+    right_a = bend - inner_end + 1
+    right_b = bend + downstream
+
+    # Use the maximum range of whole-seq is given
+    if whole_seq:
+        left_a = np.min([left_a, right_b])
+        left_b = np.max([left_a, right_b])
+        right_a, right_b = 1, 0
+    elif upstream==0 and inner_start==0:
+        left_a, left_b = 1, 0
+    elif downstream==0 and inner_end==0:
+        right_a, right_b = 1, 0
 
     return left_a, left_b, right_a, right_b
 
