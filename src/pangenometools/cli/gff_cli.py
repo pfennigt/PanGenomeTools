@@ -120,11 +120,14 @@ def extract_gff_features(args: argparse.Namespace) -> None:
                         features = gff_handler.get_features_for_gene(
                             genotype, gene_id, args.feature_type, args.merge_strategy
                         )
-
                         if features is None or len(features) == 0:
                             if not args.silent:
                                 print(f"Warning: No features found for {gene_id} in {genotype}", file=sys.stderr)
                             continue
+                        
+                        # If a single feature is returned, package it in a list
+                        if hasattr(features, 'df'):
+                            features = [features]
 
                         # Write features to output
                         for feature in features:
