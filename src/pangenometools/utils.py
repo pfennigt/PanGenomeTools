@@ -263,7 +263,7 @@ def calculate_coordinate_boundaries(
     whole_seq: bool = False,
     use_five_prime_direction: bool = False,
     no_extra_padding: bool = False,
-) -> Tuple[int, int, int, int]:
+) -> Tuple[int, int, int, int, int]:
     """
     Calculate coordinate boundaries for sequence extraction.
     
@@ -283,7 +283,7 @@ def calculate_coordinate_boundaries(
                             the gene, raise an error instead of adding padding
     
     Returns:
-        Tuple of (left_a, left_b, right_a, right_b) coordinates
+        Tuple of (left_a, left_b, right_a, right_b, additional_padding) coordinates
     """
     # Switch left and right windows if the feature is on the reverse strand
     if not use_five_prime_direction and strand == "-":
@@ -337,7 +337,7 @@ def calculate_coordinate_boundaries(
     elif downstream==0 and inner_end==0:
         right_a, right_b = 1, 0
 
-    return left_a, left_b, right_a, right_b
+    return left_a, left_b, right_a, right_b, additional_padding
 
 def clip_coordinates(
     left_a: int,

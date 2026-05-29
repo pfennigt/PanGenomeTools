@@ -75,7 +75,7 @@ class BigWigHandler(PangenomeFileHandler):
         end_1based = end          # pyranges end is 0-based exclusive, so it's already correct
 
         # Use shared coordinate calculation function
-        left_a, left_b, right_a, right_b = calculate_coordinate_boundaries(
+        left_a, left_b, right_a, right_b, additional_padding = calculate_coordinate_boundaries(
             start_1based, end_1based, strand, upstream, downstream,
             inner_start, inner_end, whole_seq, use_five_prime_direction
         )
@@ -105,7 +105,7 @@ class BigWigHandler(PangenomeFileHandler):
         left_vals = [None if (v is None or (isinstance(v, float) and v != v)) else v for v in left_vals]
         right_vals = [None if (v is None or (isinstance(v, float) and v != v)) else v for v in right_vals]
 
-        pad_list = [None] * pad
+        pad_list = [None] * (pad + additional_padding)
 
         combined = left_vals + pad_list + right_vals
 

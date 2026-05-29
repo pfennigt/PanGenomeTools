@@ -95,7 +95,7 @@ class FastaHandler(PangenomeFileHandler):
         end_1based = end          # pyranges end is 0-based exclusive, so it's already correct
 
         # Use shared coordinate calculation function
-        left_a, left_b, right_a, right_b = calculate_coordinate_boundaries(
+        left_a, left_b, right_a, right_b, additional_padding = calculate_coordinate_boundaries(
             start_1based, end_1based, strand, upstream, downstream,
             inner_start, inner_end, False, use_five_prime_direction
         )
@@ -115,7 +115,7 @@ class FastaHandler(PangenomeFileHandler):
             right_seq = ""
 
         # Compose final sequence
-        combined = left_seq + (pad * "N") + right_seq
+        combined = left_seq + ((pad + additional_padding) * "N") + right_seq
 
         # Apply strand correction
         if strand == "-":
