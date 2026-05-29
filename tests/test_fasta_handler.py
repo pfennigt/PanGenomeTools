@@ -54,10 +54,17 @@ def test_fasta_handler_basic_extraction(setup_test_files):
 
     fasta_handler = FastaHandler(pangenome_folder, pangenome_index)
 
-    # Test gene extraction
-    sequence = fasta_handler.extract_sequence("test1", "GENE001", "gene", upstream=10, downstream=10)
+    # Test gene extraction for gene 1
+    sequence = fasta_handler.extract_sequence("test1", "GENE001", "gene", upstream=20, downstream=40, pad=0)
     assert len(sequence) > 0
     assert isinstance(sequence, str)
+    assert sequence == "TTTTTAAAAAAACCCCCCCGCCCCCCCCCCCCGGGGGGGGGGGGGGGGTTTTTTTTTTTT"
+
+    # Test gene extraction for gene 2
+    sequence = fasta_handler.extract_sequence("test1", "GENE002", "gene", upstream=20, downstream=40, pad=0)
+    assert len(sequence) > 0
+    assert isinstance(sequence, str)
+    assert sequence == "TTTTTTTTAAAAAAAAAAAAAAAACCCCCCCCCCCCCCCCCGGGGGGGGGGGGGGGGGTT"
 
 def test_fasta_handler_cds_extraction(setup_test_files):
     """Test CDS sequence extraction."""
