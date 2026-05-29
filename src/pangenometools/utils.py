@@ -1,4 +1,8 @@
-#!/usr/bin/env python3
+"""
+Utility functions for PanGenomeTools.
+
+This module provides shared functionality used across different handlers.
+"""
 
 import re
 import pandas as pd
@@ -11,11 +15,9 @@ from pathlib import Path
 
 from functools import partial
 
-from typing import Union
+from typing import Union, Tuple, Dict, List, Optional
 
 import logging
-
-from typing import Dict
 
 # Set up a logger
 _formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
@@ -122,7 +124,7 @@ def extract_fasta_header_like(header:Union[str,list,pd.Series], key_prefix:str="
 
     # Get meta info about the extraction and chunking
     # Automatically detect the positions of the sequences
-    extract_info = {
+    extract_info = { 
         
     }
     _extract_type = info.loc[0,f"{key_prefix}type"]
@@ -249,3 +251,114 @@ def read_index(index_path: Path) -> Dict[str, Dict[str, str]]:
             }
     return d
 
+# Shared functions for coordinate calculations
+def calculate_coordinate_boundaries(
+    start: int,
+    end: int,
+    strand: str,
+    upstream: int = 0,
+    downstream: int = 0,
+    inner_start: int = 0,
+    inner_end: int = 0,
+    whole_seq: bool = False,
+    use_five_prime_direction: bool = False
+) -> Tuple[int, int, int, int]:
+    """
+    Calculate coordinate boundaries for sequence extraction.
+    
+    Args:
+        start: Feature start coordinate
+        end: Feature end coordinate  
+        strand: Feature strand (+ or -)
+        upstream: Nucleotides to include upstream (5' direction)
+        downstream: Nucleotides to include downstream (3' direction)
+        inner_start: Nucleotides to include from start of feature
+        inner_end: Nucleotides to include from end of feature
+        whole_seq: If True, extract entire feature sequence
+        use_five_prime_direction: If True, always interpret upstream/downstream
+                                   in 5' direction regardless of strand.
+                                   If False, reverse upstream/downstream for negative strand.
+    
+    Returns:
+        Tuple of (left_a, left_b, right_a, right_b) coordinates
+    """
+    # Interior coordinate logic
+    bstart, bend = (end, start) if strand == "-" else (start, end)
+
+    if whole_seq:
+        left_a, left_b = min(start, end), max(start, end)
+        right_a, right_b = 1, 0
+    else:
+        # Determine direction based on strand and use_five_prime_direction
+        if use_five_prime_direction:
+            # Always use 5' direction (upstream = 5', downstream = 3')
+            (upstream, inner_start, inner_end, downstream) = (upstream, inner_start, inner_end, downstream)
+        elif strand == "-":
+            # For negative strand without use_five_prime_direction, reverse the direction
+            (upstream, inner_start, inner_end, downstream) = (downstream, inner_end, inner_start, upstream)
+        else:
+            # For positive strand, use as-is
+            (upstream, inner_start, inner_end, downstream) = (upstream, inner_start, inner_end, downstream)
+
+        left_a = bstart - upstream
+        left_b = bstart + inner_start - 1
+        
+        right_a = bend - inner_end + 1
+        right_b = bend + downstream
+
+    return left_a, left_b, right_a, right_b
+
+def clip_coordinates(
+    left_a: int,
+    left_b: int,
+    right_a: int,
+    right_b: int,
+    chrom_len: int
+) -> Tuple[int, int, int, int]:
+    """
+    Clip coordinates to valid chromosome range.
+    
+    Args:
+        left_a: Left segment start coordinate
+        left_b: Left segment end coordinate
+        right_a: Right segment start coordinate
+        right_b: Right segment end coordinate
+        chrom_len: Chromosome length
+    
+    Returns:
+        Tuple of clipped coordinates (ll, lh, rl, rh)
+    """
+    def clip_coord(coord: int, chrom_len: int) -> int:
+        """Clip coordinate to valid range."""
+        return max(1, min(coord, chrom_len))
+
+    ll, lh = clip_coord(left_a, chrom_len), clip_coord(left_b, chrom_len)
+    rl, rh = clip_coord(right_a, chrom_len), clip_coord(right_b, chrom_len)
+
+    return ll, lh, rl, rh
+
+def read_target_genes(target_path: Path) -> Tuple[List[str], List[Dict[str, str]]]:
+    """
+    Read target genes from CSV file.
+    
+    Args:
+        target_path: Path to target genes CSV file
+    
+    Returns:
+        Tuple of (genotypes, rows)
+    
+    Raises:
+        ValueError: If target_genes.csv doesn't contain required columns
+    """
+    rows = []
+    with open(target_path, newline="") as fh:
+        reader = csv.DictReader(fh)
+        headers = reader.fieldnames or []
+        geno_cols = [h for h in headers if h.startswith("gene_ID_")]
+        if "gene_name" not in headers:
+            raise ValueError("target_genes.csv must contain a gene_name column")
+        for r in reader:
+            rows.append(r)
+
+    genotypes = [h.replace("gene_ID_", "") for h in geno_cols]
+    return genotypes, rows

@@ -13,6 +13,7 @@ from Bio.Seq import Seq
 from .base import PangenomeFileHandler
 from .gff import GFFHandler
 import pyranges as pr
+from ..utils import calculate_coordinate_boundaries, clip_coordinates
 
 
 class FastaHandler(PangenomeFileHandler):
@@ -29,19 +30,20 @@ class FastaHandler(PangenomeFileHandler):
         super().__init__(pangenome_folder, pangenome_index)
         self.gff_handler = GFFHandler(pangenome_folder, pangenome_index)
 
-    def extract_sequence(self,
-                        genotype: str,
-                        gene_id: str,
-                        feature_type: str = "gene",
-                        upstream: int = 0,
-                        downstream: int = 0,
-                        inner_start: int = 0,
-                        inner_end: int = 0,
-                        merge_strategy: Literal["merge", "first", "all"] = "merge",
-                        pad: int = 0,
-                        use_five_prime_direction: bool = False,
-                        return_coordinates: bool = False
-                        ) -> Union[str, Tuple[str, str, int, int, str]]:
+    def extract_sequence(
+        self,
+        genotype: str,
+        gene_id: str,
+        feature_type: str = "gene",
+        upstream: int = 0,
+        downstream: int = 0,
+        inner_start: int = 0,
+        inner_end: int = 0,
+        merge_strategy: Literal["merge", "first", "all"] = "merge",
+        pad: int = 0,
+        use_five_prime_direction: bool = False,
+        return_coordinates: bool = False
+        ) -> Union[str, Tuple[str, str, int, int, str]]:
         """
         Extract sequence for a gene with given parameters.
 
@@ -92,33 +94,15 @@ class FastaHandler(PangenomeFileHandler):
         start_1based = start + 1  # pyranges start is 0-based inclusive
         end_1based = end          # pyranges end is 0-based exclusive, so it's already correct
 
-        # Determine direction based on strand and use_five_prime_direction
-        if use_five_prime_direction:
-            # Always use 5' direction (upstream = 5', downstream = 3')
-            (upstream, inner_start, inner_end, downstream) = (upstream, inner_start, inner_end, downstream)
-        elif strand == "-":
-            # For negative strand without use_five_prime_direction, reverse the direction
-            (upstream, inner_start, inner_end, downstream) = (downstream, inner_end, inner_start, upstream)
-        else:
-            # For positive strand, use as-is
-            (upstream, inner_start, inner_end, downstream) = (upstream, inner_start, inner_end, downstream)
-
-        # Calculate boundaries
-        left_a = start_1based - upstream
-        left_b = start_1based + inner_start - 1
-        
-        right_a = end_1based - inner_end + 1
-        right_b = end_1based + downstream
+        # Use shared coordinate calculation function
+        left_a, left_b, right_a, right_b = calculate_coordinate_boundaries(
+            start_1based, end_1based, strand, upstream, downstream,
+            inner_start, inner_end, False, use_five_prime_direction
+        )
 
         # Clip coordinates to chromosome length
         chrom_len = len(fasta[chrom])
-        
-        def clip_coord(coord: int, chrom_len: int) -> int:
-            """Clip coordinate to valid range."""
-            return max(1, min(coord, chrom_len))
-
-        ll, lh = clip_coord(left_a, chrom_len), clip_coord(left_b, chrom_len)
-        rl, rh = clip_coord(right_a, chrom_len), clip_coord(right_b, chrom_len)
+        ll, lh, rl, rh = clip_coordinates(left_a, left_b, right_a, right_b, chrom_len)
 
         # Extract sequences
         left_seq = str(fasta[chrom][ll-1:lh]) if ll <= lh else ""
@@ -142,18 +126,19 @@ class FastaHandler(PangenomeFileHandler):
         else:
             return combined
 
-    def extract_sequence_with_coordinates(self,
-                                        genotype: str,
-                                        gene_id: str,
-                                        feature_type: str = "gene",
-                                        upstream: int = 0,
-                                        downstream: int = 0,
-                                        inner_start: int = 0,
-                                        inner_end: int = 0,
-                                        merge_strategy: Literal["merge", "first", "all"] = "merge",
-                                        pad: int = 0,
-                                        use_five_prime_direction: bool = False
-                                        ) -> tuple:
+    def extract_sequence_with_coordinates(
+        self,
+        genotype: str,
+        gene_id: str,
+        feature_type: str = "gene",
+        upstream: int = 0,
+        downstream: int = 0,
+        inner_start: int = 0,
+        inner_end: int = 0,
+        merge_strategy: Literal["merge", "first", "all"] = "merge",
+        pad: int = 0,
+        use_five_prime_direction: bool = False
+        ) -> tuple:
         """
         Extract sequence and return with coordinates.
 
