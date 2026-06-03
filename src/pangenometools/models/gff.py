@@ -76,8 +76,11 @@ class GFFHandler(PangenomeFileHandler):
             self.logger.warning(f"Gene {gene_id} not found in {genotype}")
             return gene_features
 
-        # Find all features of the requested type that are children of this gene
-        gene_children = all_features[(all_features.Parent == gene_id) | (all_features.ID == gene_id)]
+        # Get the IDs of children of this gene
+        children_ids = set(all_features.ID[all_features.Parent == gene_id])
+
+        # Find all features of the requested type that are children or grandchildren of this gene
+        gene_children = all_features[(all_features.Parent == gene_id) | (all_features.ID == gene_id) | all_features.Parent.isin(children_ids)]
 
         if feature_type != "all":
             gene_children = gene_children[gene_children.Feature == feature_type]
