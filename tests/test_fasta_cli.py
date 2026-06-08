@@ -38,7 +38,6 @@ def test_fasta_cli_parser_arguments():
         "--merge-strategy", "merge",
         "--use-five-prime-direction",
         "--silent",
-        "--include-coordinates"
     ])
     
     assert args.pangenome_folder == "/test/folder"
@@ -54,7 +53,6 @@ def test_fasta_cli_parser_arguments():
     assert args.merge_strategy == "merge"
     assert args.use_five_prime_direction == True
     assert args.silent == True
-    assert args.include_coordinates == True
 
 def test_fasta_cli_error_handling():
     """Test FASTA CLI error handling."""
@@ -191,7 +189,6 @@ def test_fasta_cli_with_coordinates_option(setup_test_files):
         '--feature-type', 'gene',
         '--inner-start', '50',
         '--inner-end', '50',
-        '--include-coordinates',
         '--silent'
     ]):
         fasta_cli()
@@ -206,10 +203,9 @@ def test_fasta_cli_with_coordinates_option(setup_test_files):
         
     content = output_file.read_text()
     print(f"FASTA CLI with coordinates output content: {content[:200]}...")
-    assert "chrom=" in content
-    assert "start=" in content
-    assert "end=" in content
-    assert "strand=" in content
+    assert "genotype=" in content
+    assert "gene_name=" in content
+    assert "inner_start:50&inner_end:50" in content
 
 def test_fasta_cli_with_five_prime_direction(setup_test_files):
     """Test FASTA CLI with five prime direction option."""
@@ -304,7 +300,6 @@ def test_fasta_cli_argument_types():
     assert isinstance(args.merge_strategy, str)
     assert isinstance(args.use_five_prime_direction, bool)
     assert isinstance(args.silent, bool)
-    assert isinstance(args.include_coordinates, bool)
 
 def test_fasta_cli_against_old_implementation(setup_test_files):
     """Test FASTA CLI with actual test data."""
