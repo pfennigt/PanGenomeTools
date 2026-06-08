@@ -1,0 +1,10 @@
+{
+  "input_fasta": {
+    "class": "File",
+    "path": "/path/to/input_genome.fasta"
+  },
+  "output_gff": "pseudo_annotation.gff",
+  "feature_type": "gene",
+  "upstream": 1500,
+  "downstream": 1500
+}

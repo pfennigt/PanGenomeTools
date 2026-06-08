@@ -1,0 +1,25 @@
+{
+  "pangenome_folder": {
+    "class": "Directory",
+    "path": "/path/to/pangenome"
+  },
+  "pangenome_index": {
+    "class": "File",
+    "path": "/path/to/pangenome_index.csv"
+  },
+  "target_genes": {
+    "class": "File",
+    "path": "/path/to/target_genes.csv"
+  },
+  "output": "extracted_sequences.fasta",
+  "feature_type": "gene",
+  "upstream": 1000,
+  "downstream": 500,
+  "inner_start": 0,
+  "inner_end": 0,
+  "pad": 0,
+  "merge_strategy": "merge",
+  "use_five_prime_direction": false,
+  "include_coordinates": true,
+  "silent": false
+}

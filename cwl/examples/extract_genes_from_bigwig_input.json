@@ -1,0 +1,32 @@
+{
+  "pangenome_folder": {
+    "class": "Directory",
+    "path": "/path/to/pangenome"
+  },
+  "pangenome_index": {
+    "class": "File",
+    "path": "/path/to/pangenome_index.csv"
+  },
+  "bigwig_folder": {
+    "class": "Directory",
+    "path": "/path/to/bigwig_files"
+  },
+  "bigwig_index": {
+    "class": "File",
+    "path": "/path/to/bigwig_index.csv"
+  },
+  "target_genes": {
+    "class": "File",
+    "path": "/path/to/target_genes.csv"
+  },
+  "output": "extracted_signals.json",
+  "feature_type": "gene",
+  "upstream": 1000,
+  "downstream": 500,
+  "inner_start": 0,
+  "inner_end": 0,
+  "pad": 0,
+  "whole_seq": false,
+  "use_five_prime_direction": false,
+  "silent": false
+}

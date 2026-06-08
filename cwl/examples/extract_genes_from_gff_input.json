@@ -1,0 +1,19 @@
+{
+  "pangenome_folder": {
+    "class": "Directory",
+    "path": "/path/to/pangenome"
+  },
+  "pangenome_index": {
+    "class": "File",
+    "path": "/path/to/pangenome_index.csv"
+  },
+  "target_genes": {
+    "class": "File",
+    "path": "/path/to/target_genes.csv"
+  },
+  "output": "extracted_features.gff",
+  "feature_type": "gene",
+  "search_mode": "children",
+  "merge_strategy": "merge",
+  "silent": false
+}

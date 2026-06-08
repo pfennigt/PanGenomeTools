@@ -1,0 +1,10 @@
+{
+  "index": {
+    "class": "File",
+    "path": "/path/to/pangenome_index.csv"
+  },
+  "output": "extracted_transcriptomes",
+  "pangenome_dir": "",
+  "type": "gene",
+  "extra": "--upstream 1000 --downstream 500"
+}
