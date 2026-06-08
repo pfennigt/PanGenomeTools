@@ -41,9 +41,10 @@ class FastaHandler(PangenomeFileHandler):
         inner_end: int = 0,
         merge_strategy: Literal["merge", "first", "all"] = "merge",
         pad: int = 0,
+        whole_seq = False,
         use_five_prime_direction: bool = False,
-        return_coordinates: bool = False
-        ) -> Union[str, Tuple[str, str, int, int, str]]:
+        return_info: bool = False
+        ) -> Union[str, Tuple[str, dict]]:
         """
         Extract sequence for a gene with given parameters.
 
@@ -57,14 +58,15 @@ class FastaHandler(PangenomeFileHandler):
             inner_end: Nucleotides to include from end of feature
             merge_strategy: How to handle multiple features
             pad: Number of Ns to pad between segments
+            whole_seq: Extract the whole sequence between start and end
             use_five_prime_direction: If True, always interpret upstream/downstream
                                      in 5' direction regardless of strand.
                                      If False, reverse upstream/downstream for negative strand.
-            return_coordinates: If True, return tuple with coordinates. If False, return sequence only.
+            return_info: If True, return dict with extraction info. If False, return sequence only.
 
         Returns:
-            If return_coordinates is False: Extracted sequence as string
-            If return_coordinates is True: Tuple of (sequence, chromosome, start, end, strand)
+            If return_info is False: Extracted sequence as string
+            If return_info is True: Tuple of (sequence, info_dict)
 
         Raises:
             ValueError: If gene or features not found
@@ -97,7 +99,7 @@ class FastaHandler(PangenomeFileHandler):
         # Use shared coordinate calculation function
         left_a, left_b, right_a, right_b, additional_padding = calculate_coordinate_boundaries(
             start_1based, end_1based, strand, upstream, downstream,
-            inner_start, inner_end, False, use_five_prime_direction
+            inner_start, inner_end, whole_seq, use_five_prime_direction
         )
 
         # Clip coordinates to chromosome length
@@ -121,47 +123,18 @@ class FastaHandler(PangenomeFileHandler):
         if strand == "-":
             combined = str(Seq(combined).reverse_complement())
 
-        if return_coordinates:
-            return combined, chrom, start, end, strand
+        if return_info:
+            info = {
+                "chrom":chrom,
+                "strand":strand,
+                "ll":ll,
+                "lh":lh,
+                "rl":rl,
+                "rh":rh,
+                "left_len": len(left_seq),
+                "right_len": len(right_seq),
+                "additional_padding": additional_padding,
+            }
+            return combined, info
         else:
             return combined
-
-    def extract_sequence_with_coordinates(
-        self,
-        genotype: str,
-        gene_id: str,
-        feature_type: str = "gene",
-        upstream: int = 0,
-        downstream: int = 0,
-        inner_start: int = 0,
-        inner_end: int = 0,
-        merge_strategy: Literal["merge", "first", "all"] = "merge",
-        pad: int = 0,
-        use_five_prime_direction: bool = False
-        ) -> tuple:
-        """
-        Extract sequence and return with coordinates.
-
-        Args:
-            genotype: Genotype identifier
-            gene_id: Gene ID to extract sequence for
-            feature_type: Type of feature to use for coordinates
-            upstream: Nucleotides to include upstream
-            downstream: Nucleotides to include downstream
-            inner_start: Nucleotides to include from start of feature
-            inner_end: Nucleotides to include from end of feature
-            merge_strategy: How to handle multiple features
-            pad: Number of Ns to pad between segments
-            use_five_prime_direction: If True, always interpret upstream/downstream
-                                     in 5' direction regardless of strand.
-                                     If False, reverse upstream/downstream for negative strand.
-
-        Returns:
-            Tuple of (sequence, chromosome, start, end, strand)
-        """
-        # This method is kept for backward compatibility but now calls the main method
-        return self.extract_sequence(
-            genotype, gene_id, feature_type, upstream, downstream,
-            inner_start, inner_end, merge_strategy, pad, use_five_prime_direction,
-            return_coordinates=True
-        )

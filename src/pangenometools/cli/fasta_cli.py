@@ -46,6 +46,8 @@ def setup_fasta_parser() -> argparse.ArgumentParser:
                        help="Nucleotides to include from end of feature")
     parser.add_argument("--pad", type=int, default=0,
                        help="Number of Ns to pad between segments")
+    parser.add_argument("--whole-seq", action="store_true",
+                       help="Extract the whole sequence between start and end")
 
     # Feature handling options
     parser.add_argument("--merge-strategy", default="merge",
@@ -57,8 +59,6 @@ def setup_fasta_parser() -> argparse.ArgumentParser:
     # Additional options
     parser.add_argument("--silent", action="store_true",
                        help="Suppress progress output")
-    parser.add_argument("--include-coordinates", action="store_true",
-                       help="Include coordinates in output header")
 
     return parser
 
@@ -130,42 +130,62 @@ def extract_fasta_sequences(args: argparse.Namespace) -> None:
 
                     try:
                         # Extract sequence
-                        if args.include_coordinates:
-                            result = fasta_handler.extract_sequence(
-                                genotype, gene_id, args.feature_type,
-                                args.upstream, args.downstream,
-                                args.inner_start, args.inner_end,
-                                args.merge_strategy, args.pad,
-                                args.use_five_prime_direction,
-                                return_coordinates=True
-                            )
-                            sequence, chrom, start, end, strand = result
-                        else:
-                            sequence = fasta_handler.extract_sequence(
-                                genotype, gene_id, args.feature_type,
-                                args.upstream, args.downstream,
-                                args.inner_start, args.inner_end,
-                                args.merge_strategy, args.pad,
-                                args.use_five_prime_direction
-                            )
-                            chrom, start, end, strand = "", "", "", ""
+                        sequence, info = fasta_handler.extract_sequence(
+                            genotype, gene_id, args.feature_type,
+                            args.upstream, args.downstream,
+                            args.inner_start, args.inner_end,
+                            args.merge_strategy, args.pad,
+                            args.whole_seq,
+                            args.use_five_prime_direction,
+                            return_info=True
+                        )
 
                         if not sequence:
                             if not args.silent:
                                 print(f"Warning: No sequence extracted for {gene_id} in {genotype}", file=sys.stderr)
                             continue
-
+                        
                         # Create header
-                        if args.include_coordinates:
-                            header = (
-                                f"{gene_id}_genotype={genotype}_gene_name={gene_name}_"
-                                f"feature={args.feature_type}_chrom={chrom}_start={start}_end={end}_strand={strand}"
-                            )
+                        header_location = [
+                            f"{info['chrom']}:{info['ll']}-{info['lh']}({info['strand']})" if info['left_len'] >0 else None,
+                            f"{info['chrom']}:{info['rl']}-{info['rh']}({info['strand']})" if info['right_len'] >0 and not args.whole_seq else None,
+                            ]
+                        # Remove either location if it is irrelevant
+                        header_location = [x for x in header_location if x is not None]
+                        # Join the locations
+                        header_location = "&".join(header_location)
+
+                        # Set the label for the sequence ID
+                        # Determine if the sequence is a promoter and/or terminator
+                        if (info['left_len'] >0 and info['right_len'] >0) or args.whole_seq:
+                            label="flanking"
+                        elif (info['left_len'] >0 and info['strand'] == "+") or (info['right_len'] >0 and info['strand'] == "-"):
+                            label="promoter"
+                        elif (info['left_len'] >0 and info['strand'] == "-") or (info['right_len'] >0 and info['strand'] == "+"):
+                            label="terminator"
                         else:
-                            header = (
-                                f"{gene_id}_genotype={genotype}_gene_name={gene_name}_"
-                                f"feature={args.feature_type}"
-                            )
+                            raise RuntimeError(f"error in determining sequence type for {gene_id}")
+
+                        # Get the extraction options
+                        ex_options = [
+                            f"upstream:{args.upstream}" if args.upstream is not None else "",
+                            f"inner_start:{args.inner_start}" if not args.whole_seq else "",
+                            f"inner_end:{args.inner_end}" if not args.whole_seq else "",
+                            f"downstream:{args.downstream}" if args.downstream is not None else "",
+                            "whole-seq:True" if args.whole_seq else "",
+                            "use-five-prime-direction:True" if args.use_five_prime_direction else "",
+                            f"pad:{int(args.pad)+info['additional_padding']}" if not args.whole_seq else "",
+                        ]
+                        ex_options = [x for x in ex_options if len(x)>0]
+
+                        # Join the options
+                        ex_options = "&".join(ex_options)
+
+                        # Create the header
+                        header = (
+                            f"{gene_id}_{label} genotype={genotype} gene_name={gene_name} type={args.feature_type} "
+                            f"location={header_location} extraction_options={ex_options}"
+                        )
 
                         # Write to output
                         out_fh.write(f">{header}\n")
