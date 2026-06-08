@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 from unittest.mock import patch, MagicMock
 from pangenometools.cli.fasta_cli import setup_fasta_parser, fasta_cli
+from pangenometools.old.extract_genes_from_fasta import main
 
 def test_fasta_cli_parser_setup():
     """Test FASTA CLI parser setup."""
@@ -83,7 +84,7 @@ def test_fasta_cli_with_test_data(setup_test_files):
         '--feature-type', 'gene',
         '--inner-start', '50',
         '--inner-end', '50',
-        '--silent'
+        # '--silent'
     ]):
                 fasta_cli()
     
@@ -304,3 +305,41 @@ def test_fasta_cli_argument_types():
     assert isinstance(args.use_five_prime_direction, bool)
     assert isinstance(args.silent, bool)
     assert isinstance(args.include_coordinates, bool)
+
+def test_fasta_cli_against_old_implementation(setup_test_files):
+    """Test FASTA CLI with actual test data."""
+    output_file = setup_test_files / "output.fa"
+    output_file2 = setup_test_files / "output2.fa"
+    
+    # Test CLI execution
+    with patch.object(sys, 'argv', [
+        'fasta_cli',
+        '--pangenome-folder', str(setup_test_files),
+        '--pangenome-index', str(setup_test_files / 'index.csv'),
+        '--target-genes', str(setup_test_files / 'target_genes.csv'),
+        '--output', str(output_file),
+        '--feature-type', 'gene',
+        '--inner-start', '50',
+        '--inner-end', '50',
+        '--silent'
+    ]):
+                fasta_cli()
+    
+        # Test CLI execution
+    with patch.object(sys, 'argv', [
+        'main',
+        '--pangenome_folder', str(setup_test_files),
+        '--pangenome_index', str(setup_test_files / 'index.csv'),
+        '--target_genes', str(setup_test_files / 'target_genes.csv'),
+        '--output', str(output_file2),
+        '--type', 'gene',
+        '--inner-start', '50',
+        '--inner-end', '50',
+        '--nworkers', '1',
+        '--tempdir', str(setup_test_files)
+    ]):
+                main()
+
+    with open(output_file, "r") as f_new:
+        with open(output_file2, "r") as f_old:
+            assert f_new.read() == f_old.read()

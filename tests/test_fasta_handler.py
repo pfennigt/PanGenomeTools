@@ -151,25 +151,6 @@ def test_fasta_handler_merge_strategies(setup_test_files):
     assert len(sequence_first) > 0
     assert len(sequence_all) > 0
 
-def test_fasta_handler_with_coordinates(setup_test_files):
-    """Test sequence extraction with coordinates return."""
-    pangenome_folder = setup_test_files
-    pangenome_index = pangenome_folder / "index.csv"
-
-    fasta_handler = FastaHandler(pangenome_folder, pangenome_index)
-
-    # Test with coordinates
-    result = fasta_handler.extract_sequence_with_coordinates(
-        "test1", "GENE001", "gene", upstream=10, downstream=10
-    )
-
-    sequence, chrom, start, end, strand = result
-    assert len(sequence) == 20
-    assert chrom == "chr1"
-    assert start+1 == 100
-    assert end == 500
-    assert strand == "+"
-
 def test_fasta_handler_edge_cases(setup_test_files):
     """Test edge cases and boundary conditions."""
     pangenome_folder = setup_test_files

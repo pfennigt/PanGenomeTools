@@ -298,8 +298,6 @@ def extract_genome(g, geno_files, target_rows, args) -> None:
     else:
         tqdm_descr = f"{g} "
 
-    print(target_rows)
-
     # Process all rows referring to this genotype
     for row in tqdm(target_rows, desc=tqdm_descr, leave=False, file=sys.stdout, disable=(args.silent or int(args.nworkers) > 1), dynamic_ncols=True):
 
@@ -416,6 +414,7 @@ def extract_genome(g, geno_files, target_rows, args) -> None:
                 chrom = seqid.replace("chr", "")
             else:
                 err = f"seqid {seqid} not found in FASTA for {g}"
+                print(err)
                 # Log the error
                 # ErrorLogger.error(err)
                 # GeneErrorLogger.info(f"{g},{gene_id},'{err}',True")
@@ -497,13 +496,14 @@ def extract_genome(g, geno_files, target_rows, args) -> None:
                     out_fh.write(combined[i:i+80] + "\n")
             except Exception as e:
                 err = str(e)
+                print(err)
                 # Log the error
                 # ErrorLogger.error(err)
                 # GeneErrorLogger.info(f"{g},{gene_id},'{err}',True")
 
-        if not args.per_gene_group:
-            # Close the genotype fasta
-            out_fh.close()
+        # if not args.per_gene_group:
+        #     # Close the genotype fasta
+        #     out_fh.close()
 
     # unload FASTA completely
     fa.close()
