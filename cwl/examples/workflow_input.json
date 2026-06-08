@@ -1,0 +1,19 @@
+{
+  "pangenome_folder": {
+    "class": "Directory",
+    "path": "/path/to/pangenome"
+  },
+  "pangenome_index": {
+    "class": "File",
+    "path": "/path/to/pangenome_index.csv"
+  },
+  "target_genes": {
+    "class": "File",
+    "path": "/path/to/target_genes.csv"
+  },
+  "feature_type": "gene",
+  "upstream": 1000,
+  "downstream": 500,
+  "gff_output": "extracted_features.gff",
+  "fasta_output": "extracted_sequences.fasta"
+}
