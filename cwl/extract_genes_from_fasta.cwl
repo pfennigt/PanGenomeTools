@@ -1,6 +1,5 @@
 #!/usr/bin/env cwl-runner
-
-cwlVersion: v1.0
+cwlVersion: v1.2
 class: CommandLineTool
 
 # Metadata
@@ -82,6 +81,10 @@ inputs:
     default: 0
     doc: Number of Ns to pad between segments
 
+  assays_dir:
+    type: Directory
+    doc: "Path to the assays directory containing input files"
+
   merge_strategy:
     type:
       - "null"
@@ -99,12 +102,12 @@ inputs:
     default: false
     doc: Always interpret upstream/downstream in 5' direction regardless of strand
 
-  include_coordinates:
+  per_gene_group:
     type: boolean?
     inputBinding:
-      prefix: --include-coordinates
+      prefix: --per-gene-group
     default: false
-    doc: Include coordinates in output header
+    doc: Write sequences into files per gene group, not per genotype
 
   silent:
     type: boolean?
@@ -116,37 +119,23 @@ inputs:
 # Outputs
 outputs:
   extracted_sequences:
-    type: File
+    type: File[]
     outputBinding:
-      glob: $(inputs.output)
+      glob: "$(inputs.output)/*.csv"
     doc: Extracted sequences in FASTA format
 
 # Base command - use Python to call the function directly
-baseCommand: python
+baseCommand: [python, "-c", "from pangenometools.cli.fasta_cli import fasta_cli; fasta_cli()"]
 
-# Inline Python script that calls the function directly
-stdin: |
-  import sys
-  from argparse import Namespace
-  from pangenometools.cli.fasta_cli import extract_fasta_sequences
+# Requirements
+requirements:
+  - class: InlineJavascriptRequirement
+  - class: ShellCommandRequirement
+  - class: DockerRequirement
+    dockerPull: "pangenometools-cwl:latest"
 
-  # Create arguments namespace
-  args = Namespace(
-      pangenome_folder=$(inputs.pangenome_folder.path),
-      pangenome_index=$(inputs.pangenome_index.path),
-      target_genes=$(inputs.target_genes.path),
-      output=$(inputs.output),
-      feature_type=$(inputs.feature_type),
-      upstream=$(inputs.upstream),
-      downstream=$(inputs.downstream),
-      inner_start=$(inputs.inner_start),
-      inner_end=$(inputs.inner_end),
-      pad=$(inputs.pad),
-      merge_strategy=$(inputs.merge_strategy),
-      use_five_prime_direction=$(inputs.use_five_prime_direction),
-      include_coordinates=$(inputs.include_coordinates),
-      silent=$(inputs.silent)
-  )
-
-  # Call the function directly
-  extract_fasta_sequences(args)
+# Hints for better performance
+hints:
+  - class: ResourceRequirement
+    coresMin: 1
+    ramMin: 1024
