@@ -121,7 +121,7 @@ outputs:
   extracted_sequences:
     type: File[]
     outputBinding:
-      glob: "$(inputs.output)/*.csv"
+      glob: "$(inputs.output)/*.fa"
     doc: Extracted sequences in FASTA format
 
 # Base command - use Python to call the function directly
@@ -138,4 +138,8 @@ requirements:
 hints:
   - class: ResourceRequirement
     coresMin: 1
-    ramMin: 1024
+    ramMin: 4096
+
+# Standard output and error handling
+stdout: extract_genes_from_fasta.log
+stderr: extract_genes_from_fasta.error.log
