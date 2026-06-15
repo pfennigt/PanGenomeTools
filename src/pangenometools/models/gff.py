@@ -12,10 +12,16 @@ import pandas as pd
 import re
 import numpy as np
 from .base import PangenomeFileHandler
+import sys
 
 
 class GFFHandler(PangenomeFileHandler):
     """Handler for GFF/GTF files in pangenome."""
+
+    _gff: None|pr.PyRanges = None
+    _gff_feature: None|pr.PyRanges = None
+    _genotype: None|str = None
+    _feature: None|str = None
 
     def __init__(self, pangenome_folder: Path, pangenome_index: Path):
         """
@@ -27,7 +33,30 @@ class GFFHandler(PangenomeFileHandler):
         """
         super().__init__(pangenome_folder, pangenome_index)
 
-    def load_gff(self, genotype: str, feature_type: Optional[str] = None) -> pr.PyRanges:
+    def _load_gff(self, genotype) -> pr.PyRanges:
+        # See if the required fasta is still open
+        if self._gff is None or self._genotype != genotype:
+
+            # Close the open GFF
+            if self._genotype != genotype:
+                self.close_gff()
+
+            # Open the GFF if not
+            gff_path = self.resolve_path(genotype, "annotation")
+
+            self._gff = pr.read_gff3(gff_path)
+            self._genotype = genotype
+        
+        return self._gff
+
+    def close_gff(self):
+        # Close the fasta if it is open
+        if self._gff is not None:
+            self._gff.close()
+
+            self._gff = self._genotype = None
+
+    def get_feature(self, genotype: str, feature_type: str) -> pr.PyRanges:
         """
         Load GFF file for a genotype, optionally filtered by feature type.
 
@@ -38,9 +67,27 @@ class GFFHandler(PangenomeFileHandler):
         Returns:
             PyRanges object containing GFF features
         """
-        gff_path = self.resolve_path(genotype, "annotation")
-        features = pr.read_gff3(gff_path)
-        return features if feature_type is None else features.features[feature_type]
+        # Use the cached rage if it matches
+        if self._genotype == genotype and self._feature == feature_type:
+            return self._gff_feature
+        else:
+            # Other wise, load the GFF - use cached
+            features = self._load_gff(genotype)
+
+            # Set the loaded genotype and feaute
+            self._genotype = genotype
+            self._feature = feature_type
+
+            # Subset the features if requested
+            if feature_type == "all":
+                self._gff_feature = features
+            else:
+                feature = features[features.Feature == feature_type]
+                
+                self._gff_feature = feature
+                
+
+            return self._gff_feature
 
     def get_features_for_gene(self,
                             genotype: str,
@@ -67,23 +114,16 @@ class GFFHandler(PangenomeFileHandler):
             ValueError: If merge_strategy is invalid
         """
         # Load all features for this genotype
-        all_features = self.load_gff(genotype)
-
-        # Find gene features
-        gene_features = all_features[all_features.ID == gene_id]
-
-        if len(gene_features) == 0:
-            self.logger.warning(f"Gene {gene_id} not found in {genotype}")
-            return gene_features
-
-        # Get the IDs of children of this gene
-        children_ids = set(all_features.ID[all_features.Parent == gene_id])
+        all_features = self.get_feature(genotype, feature_type)
 
         # Find all features of the requested type that are children or grandchildren of this gene
-        gene_children = all_features[(all_features.Parent == gene_id) | (all_features.ID == gene_id) | all_features.Parent.isin(children_ids)]
+        if feature_type == "gene":
+            gene_children = all_features[(all_features.ID == gene_id)]
+        else:
+            # Get the IDs of children of this gene
+            children_ids = set(all_features.ID[all_features.Parent == gene_id])
 
-        if feature_type != "all":
-            gene_children = gene_children[gene_children.Feature == feature_type]
+            gene_children = all_features[(all_features.Parent == gene_id) | all_features.Parent.isin(children_ids)]
 
         if len(gene_children) == 0:
             self.logger.warning(f"No {feature_type} features found for gene {gene_id} in {genotype}")

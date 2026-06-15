@@ -14,10 +14,14 @@ from .base import PangenomeFileHandler
 from .gff import GFFHandler
 import pyranges as pr
 from ..utils import calculate_coordinate_boundaries, clip_coordinates
+import sys
 
 
 class FastaHandler(PangenomeFileHandler):
     """Handler for FASTA files in pangenome."""
+
+    _fasta: None|pyfaidx.Fasta = None
+    _genotype: None|str = None
 
     def __init__(self, pangenome_folder: Path, pangenome_index: Path):
         """
@@ -29,6 +33,29 @@ class FastaHandler(PangenomeFileHandler):
         """
         super().__init__(pangenome_folder, pangenome_index)
         self.gff_handler = GFFHandler(pangenome_folder, pangenome_index)
+
+    def load_fasta(self, genotype) -> pyfaidx.Fasta:
+        # See if the required fasta is still open
+        if self._fasta is None or self._genotype != genotype:
+
+            # Close the open fasta
+            if self._genotype != genotype:
+                self.close_fasta()
+
+            # Open the fasta if not
+            fasta_path = self.resolve_path(genotype, "assembly")
+
+            self._fasta = pyfaidx.Fasta(str(fasta_path))
+            self._genotype = genotype
+        
+        return self._fasta
+
+    def close_fasta(self):
+        # Close the fasta if it is open
+        if self._fasta is not None:
+            self._fasta.close()
+
+            self._fasta = self._genotype = None
 
     def extract_sequence(
         self,
@@ -43,7 +70,8 @@ class FastaHandler(PangenomeFileHandler):
         pad: int = 0,
         whole_seq = False,
         use_five_prime_direction: bool = False,
-        return_info: bool = False
+        return_info: bool = False,
+        _use_cache: bool = False
         ) -> Union[str, Tuple[str, dict]]:
         """
         Extract sequence for a gene with given parameters.
@@ -88,8 +116,7 @@ class FastaHandler(PangenomeFileHandler):
         strand = feature.df.loc[:,"Strand"].iloc[0]
 
         # Load FASTA file
-        fasta_path = self.resolve_path(genotype, "assembly")
-        fasta = pyfaidx.Fasta(str(fasta_path))
+        fasta = self.load_fasta(genotype)
 
         # Adjust for pyranges' 0-based indexing (start included, end excluded)
         # Convert to 1-based inclusive coordinates for pyfaidx
@@ -122,6 +149,10 @@ class FastaHandler(PangenomeFileHandler):
         # Apply strand correction
         if strand == "-":
             combined = str(Seq(combined).reverse_complement())
+
+        # Close the FASTA
+        if not _use_cache:
+            self.close_fasta()
 
         if return_info:
             info = {

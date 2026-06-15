@@ -103,12 +103,14 @@ def extract_fasta_sequences(args: argparse.Namespace) -> None:
     # Read target genes
     genotypes, target_rows = read_target_genes(Path(args.target_genes))
 
-    # Process each target row
-    for row in target_rows:
-        gene_name = row.get("gene_name", "")
+    # Process each genotype
+    for g, genotype in enumerate(genotypes):
 
-        # Process each genotype
-        for genotype in genotypes:
+        # Process each target row
+        for r, row in enumerate(target_rows):
+
+            gene_name = row.get("gene_name", "")
+
             gene_id_col = f"gene_ID_{genotype}"
             gene_id_raw = row.get(gene_id_col, "")
 
@@ -123,12 +125,14 @@ def extract_fasta_sequences(args: argparse.Namespace) -> None:
 
             # Process each gene ID
             for gene_id_raw_item in gene_id_raw:
+
                 gene_id = gene_id_raw_item.strip().strip("'\"")
 
                 if not gene_id:
                     continue
 
                 try:
+
                     # Extract sequence
                     sequence, info = fasta_handler.extract_sequence(
                         genotype, gene_id, args.feature_type,
@@ -137,7 +141,8 @@ def extract_fasta_sequences(args: argparse.Namespace) -> None:
                         args.merge_strategy, args.pad,
                         args.whole_seq,
                         args.use_five_prime_direction,
-                        return_info=True
+                        return_info=True,
+                        _use_cache = True
                     )
 
                     if not sequence:
@@ -187,15 +192,16 @@ def extract_fasta_sequences(args: argparse.Namespace) -> None:
                         f"location={header_location} extraction_options={ex_options}"
                     )
 
-                    # Determien the output file to write to
+                    # Determine the output file to write to
                     if args.per_gene_group:
                         outfile = Path(args.output) / f"{gene_name}.fa"
+                        write_mode = "w" if g == 0 else "a"
                     else:
                         outfile = Path(args.output) / f"{genotype}.fa"
-                        
-                    # Open output file
-                    with open(outfile, "w") as out_fh:
+                        write_mode = "w" if r == 0 else "a"
 
+                    # Open output file
+                    with open(outfile, write_mode) as out_fh:
                         # Write to output
                         out_fh.write(f">{header}\n")
                         for i in range(0, len(sequence), 80):
@@ -205,6 +211,10 @@ def extract_fasta_sequences(args: argparse.Namespace) -> None:
                     if not args.silent:
                         print(f"Error processing {gene_id} in {genotype}: {e}", file=sys.stderr)
                     continue
+
+    # Close the FASTA
+    fasta_handler.close_fasta()
+
 
 def fasta_cli():
     """
