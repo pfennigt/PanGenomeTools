@@ -55,6 +55,8 @@ def setup_fasta_parser() -> argparse.ArgumentParser:
                        help="Strategy for merging multiple features (default: merge)")
     parser.add_argument("--use-five-prime-direction", action="store_true",
                        help="Always interpret upstream/downstream in 5' direction regardless of strand")
+    parser.add_argument("--per-gene-group", action="store_true",
+                       help="Write sequences into files per gene group, not per genotype")
 
     # Additional options
     parser.add_argument("--silent", action="store_true",
@@ -101,101 +103,108 @@ def extract_fasta_sequences(args: argparse.Namespace) -> None:
     # Read target genes
     genotypes, target_rows = read_target_genes(Path(args.target_genes))
 
-    # Open output file
-    with open(args.output, "w") as out_fh:
-        # Process each target row
-        for row in target_rows:
-            gene_name = row.get("gene_name", "")
+    # Process each target row
+    for row in target_rows:
+        gene_name = row.get("gene_name", "")
 
-            # Process each genotype
-            for genotype in genotypes:
-                gene_id_col = f"gene_ID_{genotype}"
-                gene_id_raw = row.get(gene_id_col, "")
+        # Process each genotype
+        for genotype in genotypes:
+            gene_id_col = f"gene_ID_{genotype}"
+            gene_id_raw = row.get(gene_id_col, "")
 
-                if not gene_id_raw or gene_id_raw in ["", "[]", "[""]", "['']"]:
+            if not gene_id_raw or gene_id_raw in ["", "[]", "[""]", "['']"]:
+                continue
+
+            # Handle list format
+            if gene_id_raw.startswith("["):
+                gene_id_raw = gene_id_raw[1:-1].split(",")
+            else:
+                gene_id_raw = [gene_id_raw]
+
+            # Process each gene ID
+            for gene_id_raw_item in gene_id_raw:
+                gene_id = gene_id_raw_item.strip().strip("'\"")
+
+                if not gene_id:
                     continue
 
-                # Handle list format
-                if gene_id_raw.startswith("["):
-                    gene_id_raw = gene_id_raw[1:-1].split(",")
-                else:
-                    gene_id_raw = [gene_id_raw]
+                try:
+                    # Extract sequence
+                    sequence, info = fasta_handler.extract_sequence(
+                        genotype, gene_id, args.feature_type,
+                        args.upstream, args.downstream,
+                        args.inner_start, args.inner_end,
+                        args.merge_strategy, args.pad,
+                        args.whole_seq,
+                        args.use_five_prime_direction,
+                        return_info=True
+                    )
 
-                # Process each gene ID
-                for gene_id_raw_item in gene_id_raw:
-                    gene_id = gene_id_raw_item.strip().strip("'\"")
-
-                    if not gene_id:
+                    if not sequence:
+                        if not args.silent:
+                            print(f"Warning: No sequence extracted for {gene_id} in {genotype}", file=sys.stderr)
                         continue
-
-                    try:
-                        # Extract sequence
-                        sequence, info = fasta_handler.extract_sequence(
-                            genotype, gene_id, args.feature_type,
-                            args.upstream, args.downstream,
-                            args.inner_start, args.inner_end,
-                            args.merge_strategy, args.pad,
-                            args.whole_seq,
-                            args.use_five_prime_direction,
-                            return_info=True
-                        )
-
-                        if not sequence:
-                            if not args.silent:
-                                print(f"Warning: No sequence extracted for {gene_id} in {genotype}", file=sys.stderr)
-                            continue
-                        
-                        # Create header
-                        header_location = [
-                            f"{info['chrom']}:{info['ll']}-{info['lh']}({info['strand']})" if info['left_len'] >0 else None,
-                            f"{info['chrom']}:{info['rl']}-{info['rh']}({info['strand']})" if info['right_len'] >0 and not args.whole_seq else None,
-                            ]
-                        # Remove either location if it is irrelevant
-                        header_location = [x for x in header_location if x is not None]
-                        # Join the locations
-                        header_location = "&".join(header_location)
-
-                        # Set the label for the sequence ID
-                        # Determine if the sequence is a promoter and/or terminator
-                        if (info['left_len'] >0 and info['right_len'] >0) or args.whole_seq:
-                            label="flanking"
-                        elif (info['left_len'] >0 and info['strand'] == "+") or (info['right_len'] >0 and info['strand'] == "-"):
-                            label="promoter"
-                        elif (info['left_len'] >0 and info['strand'] == "-") or (info['right_len'] >0 and info['strand'] == "+"):
-                            label="terminator"
-                        else:
-                            raise RuntimeError(f"error in determining sequence type for {gene_id}")
-
-                        # Get the extraction options
-                        ex_options = [
-                            f"upstream:{args.upstream}" if args.upstream is not None else "",
-                            f"inner_start:{args.inner_start}" if not args.whole_seq else "",
-                            f"inner_end:{args.inner_end}" if not args.whole_seq else "",
-                            f"downstream:{args.downstream}" if args.downstream is not None else "",
-                            "whole-seq:True" if args.whole_seq else "",
-                            "use-five-prime-direction:True" if args.use_five_prime_direction else "",
-                            f"pad:{int(args.pad)+info['additional_padding']}" if not args.whole_seq else "",
+                    
+                    # Create header
+                    header_location = [
+                        f"{info['chrom']}:{info['ll']}-{info['lh']}({info['strand']})" if info['left_len'] >0 else None,
+                        f"{info['chrom']}:{info['rl']}-{info['rh']}({info['strand']})" if info['right_len'] >0 and not args.whole_seq else None,
                         ]
-                        ex_options = [x for x in ex_options if len(x)>0]
+                    # Remove either location if it is irrelevant
+                    header_location = [x for x in header_location if x is not None]
+                    # Join the locations
+                    header_location = "&".join(header_location)
 
-                        # Join the options
-                        ex_options = "&".join(ex_options)
+                    # Set the label for the sequence ID
+                    # Determine if the sequence is a promoter and/or terminator
+                    if (info['left_len'] >0 and info['right_len'] >0) or args.whole_seq:
+                        label="flanking"
+                    elif (info['left_len'] >0 and info['strand'] == "+") or (info['right_len'] >0 and info['strand'] == "-"):
+                        label="promoter"
+                    elif (info['left_len'] >0 and info['strand'] == "-") or (info['right_len'] >0 and info['strand'] == "+"):
+                        label="terminator"
+                    else:
+                        raise RuntimeError(f"error in determining sequence type for {gene_id}")
 
-                        # Create the header
-                        header = (
-                            f"{gene_id}_{label} genotype={genotype} gene_name={gene_name} type={args.feature_type} "
-                            f"location={header_location} extraction_options={ex_options}"
-                        )
+                    # Get the extraction options
+                    ex_options = [
+                        f"upstream:{args.upstream}" if args.upstream is not None else "",
+                        f"inner_start:{args.inner_start}" if not args.whole_seq else "",
+                        f"inner_end:{args.inner_end}" if not args.whole_seq else "",
+                        f"downstream:{args.downstream}" if args.downstream is not None else "",
+                        "whole-seq:True" if args.whole_seq else "",
+                        "use-five-prime-direction:True" if args.use_five_prime_direction else "",
+                        f"pad:{int(args.pad)+info['additional_padding']}" if not args.whole_seq else "",
+                    ]
+                    ex_options = [x for x in ex_options if len(x)>0]
+
+                    # Join the options
+                    ex_options = "&".join(ex_options)
+
+                    # Create the header
+                    header = (
+                        f"{gene_id}_{label} genotype={genotype} gene_name={gene_name} type={args.feature_type} "
+                        f"location={header_location} extraction_options={ex_options}"
+                    )
+
+                    # Determien the output file to write to
+                    if args.per_gene_group:
+                        outfile = Path(args.output) / f"{gene_name}.fa"
+                    else:
+                        outfile = Path(args.output) / f"{genotype}.fa"
+                        
+                    # Open output file
+                    with open(outfile, "w") as out_fh:
 
                         # Write to output
                         out_fh.write(f">{header}\n")
                         for i in range(0, len(sequence), 80):
                             out_fh.write(f"{sequence[i:i+80]}\n")
 
-                    except Exception as e:
-                        if not args.silent:
-                            print(f"Error processing {gene_id} in {genotype}: {e}", file=sys.stderr)
-                        continue
+                except Exception as e:
+                    if not args.silent:
+                        print(f"Error processing {gene_id} in {genotype}: {e}", file=sys.stderr)
+                    continue
 
 def fasta_cli():
     """
