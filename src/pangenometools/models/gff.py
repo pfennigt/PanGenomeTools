@@ -13,15 +13,16 @@ import re
 import numpy as np
 from .base import PangenomeFileHandler
 import sys
+from typing import Union
 
 
 class GFFHandler(PangenomeFileHandler):
     """Handler for GFF/GTF files in pangenome."""
 
-    _gff: None|pr.PyRanges = None
-    _gff_feature: None|pr.PyRanges = None
-    _genotype: None|str = None
-    _feature: None|str = None
+    _gff: Union[None, pr.PyRanges] = None
+    _gff_feature: Union[None, pr.PyRanges] = None
+    _genotype: Union[None, str] = None
+    _feature: Union[None, str] = None
 
     def __init__(self, pangenome_folder: Path, pangenome_index: Path):
         """
