@@ -20,8 +20,8 @@ import sys
 class FastaHandler(PangenomeFileHandler):
     """Handler for FASTA files in pangenome."""
 
-    _fasta: None|pyfaidx.Fasta = None
-    _genotype: None|str = None
+    _fasta: Union[None,pyfaidx.Fasta] = None
+    _genotype: Union[None,str] = None
 
     def __init__(self, pangenome_folder: Path, pangenome_index: Path):
         """

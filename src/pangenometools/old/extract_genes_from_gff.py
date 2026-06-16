@@ -10,7 +10,7 @@ import gzip
 import sys
 import re
 from pathlib import Path
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional, Tuple, Union
 
 try:
     from pyfaidx import Fasta
@@ -77,7 +77,7 @@ def read_target_genes(target_path: Path):
 def open_gff(gff_path: Path):
     return gzip.open(gff_path, "rt") if str(gff_path).endswith(".gz") else open(gff_path, "r")
 
-def parse_gff_features(gff_path: Path, feature_type: "str|None"):
+def parse_gff_features(gff_path: Path, feature_type: Union[str,None]):
     with open_gff(gff_path) as fh:
         for line in fh:
             if not line or line.startswith("#"):
