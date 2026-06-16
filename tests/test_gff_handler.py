@@ -63,5 +63,5 @@ class TestGFFHandler:
         first_cds = handler.get_features_for_gene("test1", "GENE001", "CDS", "first")
         assert len(first_cds) == 1
         # Access the ID correctly - pyranges might return a different structure
-        assert first_cds.df.iloc[0]['ID'] == "CDS001"  # Should be the first CDS
+        assert first_cds.iloc[0]['ID'] == "CDS001"  # Should be the first CDS
 

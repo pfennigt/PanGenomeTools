@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Dict, List
 from ..models.gff import GFFHandler
 from ..models.base import PangenomeFileHandler
+import pandas as pd
 
 def setup_gff_parser() -> argparse.ArgumentParser:
     """
@@ -126,14 +127,14 @@ def extract_gff_features(args: argparse.Namespace) -> None:
                             continue
                         
                         # If a single feature is returned, package it in a list
-                        if hasattr(features, 'df'):
+                        if isinstance(features, pd.DataFrame):
                             features = [features]
 
                         # Write features to output
                         for feature in features:
-                            if hasattr(feature, 'df'):
+                            if isinstance(features, pd.DataFrame):
                                 # It's a PyRanges object
-                                for _, row in feature.df.iterrows():
+                                for _, row in feature.iterrows():
                                     line = f"{row['Chromosome']}\t.\t{row['Feature']}\t{row['Start'] + 1}\t{row['End']}\t.\t{row['Strand']}\t.\tID={gene_id};gene_name={gene_name}\n"
                                     out_fh.write(line)
                             else:

@@ -14,13 +14,13 @@ import numpy as np
 from .base import PangenomeFileHandler
 import sys
 from typing import Union
-
+from pandas import IndexSlice as idx
 
 class GFFHandler(PangenomeFileHandler):
     """Handler for GFF/GTF files in pangenome."""
 
     _gff: Union[None, pr.PyRanges] = None
-    _gff_feature: Union[None, pr.PyRanges] = None
+    _gff_feature: Union[None, pd.DataFrame] = None
     _genotype: Union[None, str] = None
     _feature: Union[None, str] = None
 
@@ -51,13 +51,12 @@ class GFFHandler(PangenomeFileHandler):
         return self._gff
 
     def close_gff(self):
-        # Close the fasta if it is open
+        # Reset the GFF information
         if self._gff is not None:
-            self._gff.close()
 
             self._gff = self._genotype = None
 
-    def get_feature(self, genotype: str, feature_type: str) -> pr.PyRanges:
+    def get_feature(self, genotype: str, feature_type: str) -> pd.DataFrame:
         """
         Load GFF file for a genotype, optionally filtered by feature type.
 
@@ -66,7 +65,7 @@ class GFFHandler(PangenomeFileHandler):
             feature_type: Optional feature type to filter by
 
         Returns:
-            PyRanges object containing GFF features
+            DataFrame containing GFF features
         """
         # Use the cached rage if it matches
         if self._genotype == genotype and self._feature == feature_type:
@@ -81,12 +80,15 @@ class GFFHandler(PangenomeFileHandler):
 
             # Subset the features if requested
             if feature_type == "all":
-                self._gff_feature = features
+                feature = features.df
             else:
-                feature = features[features.Feature == feature_type]
-                
-                self._gff_feature = feature
-                
+                feature = features[features.Feature == feature_type].df
+            
+            # Set an index for easier searching
+            _idx = pd.MultiIndex.from_frame(feature.loc[:,["ID", "Parent"]])
+            feature.index = _idx
+
+            self._gff_feature = feature
 
             return self._gff_feature
 
@@ -95,7 +97,7 @@ class GFFHandler(PangenomeFileHandler):
                             gene_id: str,
                             feature_type: str = "CDS",
                             merge_strategy: Literal["merge", "first", "all"] = "merge"
-                            ) -> Union[pr.PyRanges, List[pr.PyRanges]]:
+                            ) -> Union[pd.DataFrame, List[pd.DataFrame]]:
         """
         Get features of a specific type for a gene, with optional merging.
 
@@ -119,12 +121,13 @@ class GFFHandler(PangenomeFileHandler):
 
         # Find all features of the requested type that are children or grandchildren of this gene
         if feature_type == "gene":
-            gene_children = all_features[(all_features.ID == gene_id)]
+            gene_children = all_features.loc[idx[gene_id, :]]
         else:
             # Get the IDs of children of this gene
-            children_ids = set(all_features.ID[all_features.Parent == gene_id])
+            # children_ids = set(all_features.ID[all_features.Parent == gene_id])
+            children_ids = set(all_features.loc[idx[:, gene_id], "ID"])
 
-            gene_children = all_features[(all_features.Parent == gene_id) | all_features.Parent.isin(children_ids)]
+            gene_children = all_features.loc[(all_features.Parent == gene_id) | all_features.Parent.isin(children_ids)]
 
         if len(gene_children) == 0:
             self.logger.warning(f"No {feature_type} features found for gene {gene_id} in {genotype}")
@@ -139,7 +142,7 @@ class GFFHandler(PangenomeFileHandler):
         else:
             raise ValueError(f"Unknown merge strategy: {merge_strategy}")
 
-    def _merge_features(self, features: pr.PyRanges) -> pr.PyRanges:
+    def _merge_features(self, features: pd.DataFrame) -> pd.DataFrame:
         """
         Merge multiple features into a single feature spanning the entire range.
 
@@ -150,16 +153,16 @@ class GFFHandler(PangenomeFileHandler):
         - Combines attributes
 
         Args:
-            features: PyRanges object containing features to merge
+            features: DataFrame containing features to merge
 
         Returns:
-            PyRanges object with merged features
+            DataFrame with merged features
         """
         if len(features) == 1:
             return features
 
         # Group by chromosome and strand
-        grouped = features.df.groupby(['Chromosome', 'Strand'])
+        grouped = features.groupby(['Chromosome', 'Strand'])
 
         merged_features = []
         for (chrom, strand), group in grouped:
@@ -179,25 +182,25 @@ class GFFHandler(PangenomeFileHandler):
                 **attributes
             })
 
-            merged_features.append(pr.PyRanges(new_feature))
+            merged_features.append(new_feature)
 
         if not merged_features:
-            return pr.PyRanges(pd.DataFrame())  # Empty result
+            return pd.DataFrame()  # Empty result
 
-        return pr.PyRanges(pd.concat([m.df for m in merged_features], ignore_index=True))
+        return pd.concat([m for m in merged_features], ignore_index=True)
 
-    def _split_by_strand_and_chrom(self, features: pr.PyRanges) -> List[pr.PyRanges]:
+    def _split_by_strand_and_chrom(self, features: pd.DataFrame) -> List[pd.DataFrame]:
         """
         Split features by chromosome and strand, returning a list.
 
         Args:
-            features: PyRanges object to split
+            features: DataFrame to split
 
         Returns:
-            List of PyRanges objects, one per chromosome/strand combination
+            List of DataFrames, one per chromosome/strand combination
         """
-        grouped = features.df.groupby(['Chromosome', 'Strand'])
-        return [pr.PyRanges(group) for _, group in grouped]
+        grouped = features.groupby(['Chromosome', 'Strand'])
+        return [group for _, group in grouped]
 
     def _combine_attributes(self, features: pd.DataFrame) -> Dict[str, List]:
         """

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Dict, List, Optional, Union, Literal, Tuple
 import pyfaidx
 import numpy as np
+import pandas as pd
 from Bio.Seq import Seq
 from .base import PangenomeFileHandler
 from .gff import GFFHandler
@@ -114,11 +115,11 @@ class FastaHandler(PangenomeFileHandler):
             raise ValueError(f"No features found for gene {gene_id} in {genotype}")
 
         # For merged features, we'll have a single feature spanning the entire range
-        feature = features if isinstance(features, pr.PyRanges) else features[0]
-        chrom = feature.df.loc[:,"Chromosome"].iloc[0]
-        start = feature.df.loc[:,"Start"].iloc[0]
-        end = feature.df.loc[:,"End"].iloc[0]
-        strand = feature.df.loc[:,"Strand"].iloc[0]
+        feature = features if isinstance(features, pd.DataFrame) else features[0]
+        chrom = feature.loc[:,"Chromosome"].iloc[0]
+        start = feature.loc[:,"Start"].iloc[0]
+        end = feature.loc[:,"End"].iloc[0]
+        strand = feature.loc[:,"Strand"].iloc[0]
 
         # Load FASTA file
         fasta = self.load_fasta(genotype)
