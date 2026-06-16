@@ -138,7 +138,7 @@ requirements:
 hints:
   - class: ResourceRequirement
     coresMin: 1
-    ramMin: 4096
+    ramMin: 10000
 
 # Standard output and error handling
 stdout: extract_genes_from_fasta.log
