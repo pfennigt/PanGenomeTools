@@ -85,7 +85,7 @@ class FastaHandler(PangenomeFileHandler):
             inner_start: Nucleotides to include from start of feature
             inner_end: Nucleotides to include from end of feature
             merge_strategy: How to handle multiple features
-            pad: Number of Ns to pad between segments
+            pad: Number of Ns to pad between segments (-1 treated as 0)
             whole_seq: Extract the whole sequence between start and end
             use_five_prime_direction: If True, always interpret upstream/downstream
                                      in 5' direction regardless of strand.
@@ -100,6 +100,11 @@ class FastaHandler(PangenomeFileHandler):
             ValueError: If gene or features not found
             FileNotFoundError: If FASTA file not found
         """
+
+        # If pad=-1 flag is given, use pad=0 instead
+        if pad == -1:
+            pad=0
+
         # Get the feature coordinates
         features = self.gff_handler.get_features_for_gene(
             genotype, gene_id, feature_type, merge_strategy
