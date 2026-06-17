@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import Dict, List
 from ..models.fasta import FastaHandler
 from ..models.gff import GFFHandler
+from pangenometools.utils import replace_genotypes
 
 def setup_fasta_parser() -> argparse.ArgumentParser:
     """
@@ -48,6 +49,8 @@ def setup_fasta_parser() -> argparse.ArgumentParser:
                        help="Number of Ns to pad between segments (use -1 to separately extract flanking regions)")
     parser.add_argument("--whole-seq", action="store_true",
                        help="Extract the whole sequence between start and end")
+    parser.add_argument("--genotypes", default=None, nargs="+",
+                       help="Genotype(s) to run the analysis for (all by default) ")
 
     # Feature handling options
     parser.add_argument("--merge-strategy", default="merge",
@@ -298,6 +301,9 @@ def extract_fasta_sequences(args: argparse.Namespace) -> None:
     if args.target_genes is not None:
         genotypes, target_rows = read_target_genes(Path(args.target_genes))
 
+        # Replace the genotypes if provided
+        genotypes = replace_genotypes(genotypes, args.genotypes)
+
         # Extract using a target genes file
         extract_with_target_genes(fasta_handler, genotypes, target_rows, args)
 
@@ -306,6 +312,9 @@ def extract_fasta_sequences(args: argparse.Namespace) -> None:
             raise ValueError("A target_genes file must be provided to use per-gene-group")
         # Use all genotypes in the pangenome index
         genotypes = fasta_handler.pangenome_index.keys()
+
+        # Replace the genotypes if provided
+        genotypes = replace_genotypes(genotypes, args.genotypes)
 
         # Extract using a target genes file
         extract_all_genes(fasta_handler, genotypes, args)

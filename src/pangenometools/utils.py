@@ -393,3 +393,18 @@ def read_target_genes(target_path: Path) -> Tuple[List[str], List[Dict[str, str]
 
     genotypes = [h.replace("gene_ID_", "") for h in geno_cols]
     return genotypes, rows
+
+# Function to replace fulle genotype list with user-provided genotypes
+def replace_genotypes(genotypes, genotypes_new):
+    # If no new genotypes are provided, return the full list
+    if genotypes_new is None:
+        return genotypes
+    
+    else:
+        # Check if all genotypes are in the availables
+        missing_genotypes = [g for g in genotypes_new if g not in genotypes]
+        if len(missing_genotypes) >0:
+            raise ValueError(f"The following genotype(s) are missing in the pangenome index: {missing_genotypes}")
+        
+        # Return the provided genotype list
+        return genotypes_new

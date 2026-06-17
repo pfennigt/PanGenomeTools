@@ -109,6 +109,16 @@ inputs:
     default: false
     doc: Write sequences into files per gene group, not per genotype
 
+  genotypes:
+    type:
+    - "null"
+    - string
+    - type: array
+      items: string 
+    inputBinding:
+      prefix: --genotypes
+    doc: Genotype(s) to run the analysis for (all by default)
+
   silent:
     type: boolean?
     inputBinding:
