@@ -25,7 +25,7 @@ inputs:
     doc: Path to pangenome index file
 
   target_genes:
-    type: File
+    type: File?
     inputBinding:
       position: 3
       prefix: --target-genes
