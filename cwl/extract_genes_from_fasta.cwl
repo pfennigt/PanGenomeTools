@@ -129,7 +129,10 @@ inputs:
 # Outputs
 outputs:
   extracted_sequences:
-    type: File[]
+    type: 
+    - File
+    - type: array
+      items: File
     outputBinding:
       glob: "$(inputs.output)/*.fa"
     doc: Extracted sequences in FASTA format
