@@ -21,6 +21,7 @@ class GFFHandler(PangenomeFileHandler):
 
     _gff: Union[None, pr.PyRanges] = None
     _gff_feature: Union[None, pd.DataFrame] = None
+    _gff_all_features: Union[None, pd.DataFrame] = None
     _genotype: Union[None, str] = None
     _feature: Union[None, str] = None
 
@@ -56,7 +57,7 @@ class GFFHandler(PangenomeFileHandler):
 
             self._gff = self._genotype = None
 
-    def get_feature(self, genotype: str, feature_type: str) -> pd.DataFrame:
+    def get_feature(self, genotype: str, feature_type: str) -> tuple[pd.DataFrame, pd.DataFrame]:
         """
         Load GFF file for a genotype, optionally filtered by feature type.
 
@@ -68,29 +69,38 @@ class GFFHandler(PangenomeFileHandler):
             DataFrame containing GFF features
         """
         # Use the cached rage if it matches
-        if self._genotype == genotype and self._feature == feature_type:
-            return self._gff_feature
+        if (self._genotype == genotype and self._feature == feature_type) and not self._gff_feature is None and not self._gff_all_features is None:
+            return self._gff_feature, self._gff_all_features
         else:
             # Other wise, load the GFF - use cached
-            features = self._load_gff(genotype)
+            features = self._load_gff(genotype).df
 
             # Set the loaded genotype and feaute
             self._genotype = genotype
             self._feature = feature_type
 
+            # Determine where the feature types is as requested
+            feature_type_bool = (features.Feature == feature_type).to_numpy()
+
+            # Set an index for easier searching
+            _idx = pd.MultiIndex.from_frame(features.loc[:,["ID", "Parent"]])
+            features.index = _idx
+
+            # Save the full gff features
+            self._gff_all_features = features
+
             # Subset the features if requested
             if feature_type == "all":
-                feature = features.df
+                feature = features
             else:
-                feature = features[features.Feature == feature_type].df
+                feature = features[feature_type_bool]
             
-            # Set an index for easier searching
-            _idx = pd.MultiIndex.from_frame(feature.loc[:,["ID", "Parent"]])
-            feature.index = _idx
+            if feature.shape[0] == 0:
+                raise ValueError(f"Feature type {feature_type} not found in annotation")
 
             self._gff_feature = feature
 
-            return self._gff_feature
+            return self._gff_feature, self._gff_all_features
 
     def get_features_for_gene(self,
                             genotype: str,
@@ -117,17 +127,17 @@ class GFFHandler(PangenomeFileHandler):
             ValueError: If merge_strategy is invalid
         """
         # Load all features for this genotype
-        all_features = self.get_feature(genotype, feature_type)
+        all_selected, all_features = self.get_feature(genotype, feature_type)
 
         # Find all features of the requested type that are children or grandchildren of this gene
         if feature_type == "gene":
-            gene_children = all_features.loc[idx[gene_id, :]]
+            gene_children = all_selected.loc[idx[gene_id, :]]
         else:
             # Get the IDs of children of this gene
             # children_ids = set(all_features.ID[all_features.Parent == gene_id])
             children_ids = set(all_features.loc[idx[:, gene_id], "ID"])
 
-            gene_children = all_features.loc[(all_features.Parent == gene_id) | all_features.Parent.isin(children_ids)]
+            gene_children = all_selected.loc[(all_selected.Parent == gene_id) | all_selected.Parent.isin(children_ids)]
 
         if len(gene_children) == 0:
             self.logger.warning(f"No {feature_type} features found for gene {gene_id} in {genotype}")
