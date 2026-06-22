@@ -35,7 +35,7 @@ class FastaHandler(PangenomeFileHandler):
         super().__init__(pangenome_folder, pangenome_index)
         self.gff_handler = GFFHandler(pangenome_folder, pangenome_index)
 
-    def load_fasta(self, genotype) -> pyfaidx.Fasta:
+    def load_fasta(self, genotype, rebuild=False) -> pyfaidx.Fasta:
         # See if the required fasta is still open
         if self._fasta is None or self._genotype != genotype:
 
@@ -46,7 +46,10 @@ class FastaHandler(PangenomeFileHandler):
             # Open the fasta if not
             fasta_path = self.resolve_path(genotype, "assembly")
 
-            self._fasta = pyfaidx.Fasta(str(fasta_path))
+            try:
+                self._fasta = pyfaidx.Fasta(str(fasta_path), rebuild=rebuild)
+            except Exception:
+                self._fasta = pyfaidx.Fasta(str(fasta_path))
             self._genotype = genotype
         
         return self._fasta
@@ -57,6 +60,10 @@ class FastaHandler(PangenomeFileHandler):
             self._fasta.close()
 
             self._fasta = self._genotype = None
+
+    def touch_fasta(self, genotype, rebuild=False):
+        self.load_fasta(genotype, rebuild=rebuild)
+        self.close_fasta()
 
     def extract_sequence(
         self,
