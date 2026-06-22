@@ -73,7 +73,7 @@ class GFFHandler(PangenomeFileHandler):
             return self._gff_feature, self._gff_all_features
         else:
             # Other wise, load the GFF - use cached
-            features = self._load_gff(genotype).df
+            features: pd.DataFrame = self._load_gff(genotype).df
 
             # Set the loaded genotype and feaute
             self._genotype = genotype
@@ -131,13 +131,13 @@ class GFFHandler(PangenomeFileHandler):
 
         # Find all features of the requested type that are children or grandchildren of this gene
         if feature_type == "gene":
-            gene_children = all_selected.loc[idx[gene_id, :]]
+            gene_children = pd.DataFrame(all_selected.loc[idx[gene_id, :]])
         else:
             # Get the IDs of children of this gene
             # children_ids = set(all_features.ID[all_features.Parent == gene_id])
             children_ids = set(all_features.loc[idx[:, gene_id], "ID"])
 
-            gene_children = all_selected.loc[(all_selected.Parent == gene_id) | all_selected.Parent.isin(children_ids)]
+            gene_children = pd.DataFrame(all_selected.loc[(all_selected.Parent == gene_id) | all_selected.Parent.isin(children_ids),:])
 
         if len(gene_children) == 0:
             self.logger.warning(f"No {feature_type} features found for gene {gene_id} in {genotype}")

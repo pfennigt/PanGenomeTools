@@ -244,7 +244,7 @@ def extract_all_genes(fasta_handler:FastaHandler, genotypes, args):
 
 
         # Get the matching "gene" GFF features for that genotype
-        features = fasta_handler.gff_handler.get_feature(genotype, "gene")
+        features, _ = fasta_handler.gff_handler.get_feature(genotype, "gene")
 
         for gene_id in features.ID:
 
