@@ -131,13 +131,24 @@ class GFFHandler(PangenomeFileHandler):
 
         # Find all features of the requested type that are children or grandchildren of this gene
         if feature_type == "gene":
+            # If we want the gene itself ,the gene_id must match
             gene_children = pd.DataFrame(all_selected.loc[idx[gene_id, :]])
+        elif feature_type.lower() in ["mrna"]:
+            # If we want the mRNA itself ,the gene_id is in the parents
+            gene_children = pd.DataFrame(all_selected.loc[idx[:, gene_id]])
         else:
             # Get the IDs of children of this gene
-            # children_ids = set(all_features.ID[all_features.Parent == gene_id])
-            children_ids = set(all_features.loc[idx[:, gene_id], "ID"])
+            children_ids = list(set(all_features.loc[idx[:, gene_id], "ID"]))
 
-            gene_children = pd.DataFrame(all_selected.loc[(all_selected.Parent == gene_id) | all_selected.Parent.isin(children_ids),:])
+            if feature_type.lower() in ["cds"]:
+                # If we want the CDS, the gene's children are in the parent's column
+                gene_children = all_selected.loc[idx[:, children_ids],:]
+            else:
+                # gene_children = pd.DataFrame(all_selected.loc[(all_selected.Parent == gene_id) | all_selected.Parent.isin(children_ids),:])
+                gene_children = pd.concat([
+                    all_selected.loc[idx[:, gene_id],:],
+                    all_selected.loc[idx[:, children_ids],:],
+                ]).drop_duplicates()
 
         if len(gene_children) == 0:
             self.logger.warning(f"No {feature_type} features found for gene {gene_id} in {genotype}")
