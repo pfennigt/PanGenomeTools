@@ -61,7 +61,7 @@ class FastaHandler(PangenomeFileHandler):
 
             self._fasta = self._genotype = None
 
-    def touch_fasta(self, genotype, rebuild=False):
+    def touch_fasta(self, genotype, rebuild=True):
         self.load_fasta(genotype, rebuild=rebuild)
         self.close_fasta()
 

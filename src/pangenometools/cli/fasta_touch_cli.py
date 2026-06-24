@@ -12,6 +12,7 @@ from typing import Dict, List
 from ..models.fasta import FastaHandler
 from ..models.gff import GFFHandler
 from pangenometools.utils import replace_genotypes
+from tqdm.auto import tqdm
 
 def setup_fasta_parser() -> argparse.ArgumentParser:
     """
@@ -66,10 +67,9 @@ def read_target_genes(target_path: Path) -> tuple:
 # FASTA extraction using a target genes file
 def touch_fasta(fasta_handler:FastaHandler, genotypes, args):
     # Process each genotype
-    for g, genotype in enumerate(genotypes):
+    for g, genotype in tqdm(enumerate(genotypes), total=len(genotypes)):
 
         try:
-            print(f"Testing loading of {genotype}", file=sys.stdout)
             # Extract sequence
             fasta_handler.touch_fasta(
                 genotype,
