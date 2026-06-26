@@ -7,9 +7,6 @@ From: mambaorg/micromamba
     . /app
 
 %post
-    # Set the base environment to activate
-    MAMBA_DOCKERFILE_ACTIVATE=1
-
     # Install the environment from file
     micromamba install --yes --name base -f /app/environment.yml
 
@@ -18,18 +15,16 @@ From: mambaorg/micromamba
     micromamba run -n base pip install -e .
 
     # Clean up lock files
-    micromamba clean -a --yes --locks
+    micromamba clean -a --yes
 
-%environment
-    # Set the base environment to activate on run
-    export MAMBA_DOCKERFILE_ACTIVATE=1
-    
+%environment  
     # Add mamba to the path to ensure python is executable
     export PATH=/opt/conda/bin:$PATH
 
 %runscript
     # Execute the input command with activated base environment
-    sh /usr/local/bin/_entrypoint.sh "$@"
+    exec "$@"
 
 %test
+    # Test that python with pangenometools is available in the container
     python -c "import pangenometools"
