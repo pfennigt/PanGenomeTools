@@ -70,7 +70,7 @@ outputs:
     doc: Log files from AGAT execution
 
 # Base command - call the script directly
-baseCommand: python
+baseCommand: [/usr/local/bin/_entrypoint.sh, python]
 
 # Arguments
 arguments:

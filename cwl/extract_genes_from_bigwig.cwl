@@ -126,7 +126,7 @@ outputs:
     doc: Extracted BigWig signals in JSON format
 
 # Base command - use Python to call the function directly
-baseCommand: python
+baseCommand: [/usr/local/bin/_entrypoint.sh, python]
 
 # Inline Python script that calls the function directly
 stdin: |

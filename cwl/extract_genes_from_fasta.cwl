@@ -138,7 +138,7 @@ outputs:
     doc: Extracted sequences in FASTA format
 
 # Base command - use Python to call the function directly
-baseCommand: [python, "-c", "from pangenometools.cli.fasta_cli import fasta_cli; fasta_cli()"]
+baseCommand: [/usr/local/bin/_entrypoint.sh, python, "-c", "from pangenometools.cli.fasta_cli import fasta_cli; fasta_cli()"]
 
 # Requirements
 requirements:

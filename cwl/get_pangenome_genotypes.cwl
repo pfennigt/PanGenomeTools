@@ -17,7 +17,7 @@ inputs:
       prefix: --genotypes
     doc: Genotype(s) to run the analysis for (all by default)
 
-baseCommand: [python, -c, "from pangenometools.cli.genotypes_cli import genotypes_cli; genotypes_cli()"]
+baseCommand: [/usr/local/bin/_entrypoint.sh, python, -c, "from pangenometools.cli.genotypes_cli import genotypes_cli; genotypes_cli()"]
 
 outputs:
   genotypes:

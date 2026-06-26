@@ -53,7 +53,7 @@ outputs:
     doc: Generated pseudo GFF annotation file
 
 # Base command - call the script directly
-baseCommand: python
+baseCommand: [/usr/local/bin/_entrypoint.sh, python]
 
 # Arguments
 arguments:
