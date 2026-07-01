@@ -167,6 +167,8 @@ def write_sequence_to_file(sequence, gene_id, genotype, gene_name, args, info, o
 def extract_with_target_genes(fasta_handler, genotypes, target_rows, args):
     # Process each genotype
     for g, genotype in enumerate(genotypes):
+        # Track the genes that were already extracted
+        extracted_genes=set()
 
         # Process each target row -> Gene groups
         for r, row in enumerate(target_rows):
@@ -200,7 +202,7 @@ def extract_with_target_genes(fasta_handler, genotypes, target_rows, args):
 
                 gene_id = gene_id_raw_item.strip().strip("'\"")
 
-                if not gene_id:
+                if not gene_id or gene_id in extracted_genes:
                     continue
 
                 try:
@@ -229,6 +231,9 @@ def extract_with_target_genes(fasta_handler, genotypes, target_rows, args):
                     )
                     if _written:
                         write_mode = "a"
+
+                        # Add the gene to the lsit of extracted genes
+                        extracted_genes.add(gene_id)
                 except Exception as e:
                     if not args.silent:
                         print(f"Error processing {gene_id} in {genotype}: {e}", file=sys.stderr)
