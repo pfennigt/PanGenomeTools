@@ -126,14 +126,21 @@ def write_sequence_to_file(sequence, gene_id, genotype, gene_name, args, info, o
 
             # Set the label for the sequence ID
             # Determine if the sequence is a promoter and/or terminator
-            # if (info['left_len'] >0 and info['right_len'] >0) or args.whole_seq:
-            #     label="flanking"
-            # elif (info['left_len'] >0 and info['strand'] == "+") or (info['right_len'] >0 and info['strand'] == "-"):
-            #     label="promoter"
-            # elif (info['left_len'] >0 and info['strand'] == "-") or (info['right_len'] >0 and info['strand'] == "+"):
-            #     label="terminator"
-            # else:
-            #     raise RuntimeError(f"error in determining sequence type for {gene_id}")
+            if sequence_loc == "combined":
+                if (info['left_len'] >0 and info['right_len'] >0) or args.whole_seq:
+                    label=""
+                elif (info['left_len'] >0 and info['strand'] == "+") or (info['right_len'] >0 and info['strand'] == "-"):
+                    label="_promoter"
+                elif (info['left_len'] >0 and info['strand'] == "-") or (info['right_len'] >0 and info['strand'] == "+"):
+                    label="_terminator"
+                else:
+                    raise RuntimeError(f"error in determining sequence type for {gene_id}")
+            elif (sequence_loc == "left" and info['strand'] == "+") or (sequence_loc == "right" and info['strand'] == "-"):
+                label="_promoter"
+            elif (sequence_loc == "right" and info['strand'] == "+") or (sequence_loc == "left" and info['strand'] == "-"):
+                label="_terminator"
+            else:
+                raise RuntimeError(f"error in determining sequence type for {gene_id}")
 
             # Get the extraction options
 
@@ -153,7 +160,7 @@ def write_sequence_to_file(sequence, gene_id, genotype, gene_name, args, info, o
 
             # Create the header
             header = (
-                f"{gene_id} genotype={genotype} gene_name={gene_name} type={args.feature_type} "
+                f"{gene_id}{label} genotype={genotype} gene_name={gene_name} type={args.feature_type} "
                 f"location={header_location} extraction_options={ex_options}"
             )
 
