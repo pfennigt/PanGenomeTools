@@ -35,7 +35,7 @@ requirements:
   - class: InlineJavascriptRequirement
   - class: ShellCommandRequirement
   - class: DockerRequirement
-    dockerPull: "pangenometools-cwl:latest"
+    dockerPull: "pangenometools-cwl"
 
 # Hints for better performance
 hints:
