@@ -8,7 +8,7 @@ From: mambaorg/micromamba
 
 %post
     # Install the environment from file
-    micromamba install --yes --name base -f /app/environment.yml
+    micromamba install --yes --quiet --name base -f /app/environment.yml
 
     # Install the package in the copied folder using pip
     cd /app
