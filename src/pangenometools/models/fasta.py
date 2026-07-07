@@ -77,6 +77,7 @@ class FastaHandler(PangenomeFileHandler):
         merge_strategy: Literal["merge", "first", "all"] = "merge",
         pad: int = 0,
         whole_seq = False,
+        skip_short_chromosomes=False,
         use_five_prime_direction: bool = False,
         return_info: bool = False,
         _use_cache: bool = False
@@ -146,9 +147,27 @@ class FastaHandler(PangenomeFileHandler):
         chrom_len = len(fasta[chrom])
         ll, lh, rl, rh = clip_coordinates(left_a, left_b, right_a, right_b, chrom_len)
 
+        if ll!=left_a or rh!=right_b:
+            if skip_short_chromosomes:
+                
+                # Close the FASTA
+                if not _use_cache:
+                    self.close_fasta()
+
+                if return_info:
+                    return "", {}
+                else:
+                    return ""
+
+            else:
+                left_pad = "N" * np.abs(left_a - ll)
+                right_pad = "N" * np.abs(right_b - rh)
+        else:
+            left_pad = ""
+            right_pad = ""
         # Extract sequences
-        left_seq = str(fasta[chrom][ll-1:lh]) if ll <= lh else ""
-        right_seq = str(fasta[chrom][rl-1:rh]) if rl <= rh else ""
+        left_seq = (left_pad + str(fasta[chrom][ll-1:lh])) if ll <= lh else ""
+        right_seq = (str(fasta[chrom][rl-1:rh]) + right_pad) if rl <= rh else ""
 
         # Apply special rules for zero-length segments
         if upstream == 0 and inner_start == 0:

@@ -225,6 +225,10 @@ def extract_with_target_genes(fasta_handler, genotypes, target_rows, args):
                         _use_cache = True
                     )
 
+                    # Skip the gene if no sequence was extracted
+                    if len(sequence) == 0:
+                        continue
+
                     # Write sequence to file
                     _written= write_sequence_to_file(
                         sequence, 
