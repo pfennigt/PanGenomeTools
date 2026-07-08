@@ -61,6 +61,11 @@ def setup_fasta_parser() -> argparse.ArgumentParser:
     parser.add_argument("--per-gene-group", action="store_true",
                        help="Write sequences into files per gene group, not per genotype")
 
+    parser.add_argument("--skip-short-chromosomes", action="store_true",
+                       help="Skip genes where the chromosome is too short to fit the flanking regions (alternative: padding with N)")
+    parser.add_argument("--skip-short-genes", action="store_true",
+                       help="Skip genes where the gene is too short to fit the inner extraction regions (alternative: padding with N)")
+
     # Additional options
     parser.add_argument("--silent", action="store_true",
                        help="Suppress progress output")
@@ -221,6 +226,8 @@ def extract_with_target_genes(fasta_handler, genotypes, target_rows, args):
                         args.merge_strategy, args.pad,
                         args.whole_seq,
                         args.use_five_prime_direction,
+                        skip_short_chromosomes=args.skip_short_chromosomes,
+                        skip_short_genes=args.skip_short_genes,
                         return_info=True,
                         _use_cache = True
                     )

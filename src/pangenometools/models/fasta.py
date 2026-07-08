@@ -77,7 +77,8 @@ class FastaHandler(PangenomeFileHandler):
         merge_strategy: Literal["merge", "first", "all"] = "merge",
         pad: int = 0,
         whole_seq = False,
-        skip_short_chromosomes=False,
+        skip_short_chromosomes=True,
+        skip_short_genes=False,
         use_five_prime_direction: bool = False,
         return_info: bool = False,
         _use_cache: bool = False
@@ -147,7 +148,9 @@ class FastaHandler(PangenomeFileHandler):
         chrom_len = len(fasta[chrom])
         ll, lh, rl, rh = clip_coordinates(left_a, left_b, right_a, right_b, chrom_len)
 
+        # Check if the outer bounds of the flanking regions are outside of the chromosome
         if ll!=left_a or rh!=right_b:
+            # If set, skip the gene
             if skip_short_chromosomes:
                 
                 # Close the FASTA
@@ -169,6 +172,35 @@ class FastaHandler(PangenomeFileHandler):
         left_seq = (left_pad + str(fasta[chrom][ll-1:lh])) if ll <= lh else ""
         right_seq = (str(fasta[chrom][rl-1:rh]) + right_pad) if rl <= rh else ""
 
+        # Get the target length os the extracted sequences
+        left_target_len = left_b - left_a + 1
+        right_target_len = right_b - right_a + 1
+        
+        # Check if the target lengths were met
+        if len(left_seq) != left_target_len or len(right_seq) != right_target_len:
+            # If set, skip the gene
+            if skip_short_genes:
+                # Close the FASTA
+                if not _use_cache:
+                    self.close_fasta()
+
+                if return_info:
+                    return "", {}
+                else:
+                    return ""
+            else:
+                # Apply padding to reach target length
+                left_seq = left_seq + "N" * (left_target_len - len(left_seq))
+                right_seq = right_seq + "N" * (right_target_len - len(right_seq))
+
+                # Check that the calculated length now match
+                if not len(left_seq) == left_target_len:
+                    raise ValueError(f"left seq wrong size: {len(left_seq)} != {left_target_len}")
+                if not len(right_seq) == right_target_len:
+                    raise ValueError(f"right seq wrong size: {len(right_seq)} != {right_target_len}")
+                if not additional_padding == (left_target_len - len(left_seq)) + (right_target_len - len(right_seq)):
+                    raise ValueError(f"padding wrong size: {additional_padding} != {(left_target_len - len(left_seq)) + (right_target_len - len(right_seq))}")
+
         # Apply special rules for zero-length segments
         if upstream == 0 and inner_start == 0:
             left_seq = ""
@@ -176,7 +208,7 @@ class FastaHandler(PangenomeFileHandler):
             right_seq = ""
 
         # Compose final sequence
-        combined = left_seq + ((pad + additional_padding) * "N") + right_seq
+        combined = left_seq + (pad * "N") + right_seq
 
         # Apply strand correction
         if strand == "-":
