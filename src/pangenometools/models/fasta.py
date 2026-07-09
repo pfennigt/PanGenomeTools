@@ -173,11 +173,13 @@ class FastaHandler(PangenomeFileHandler):
         right_seq = (str(fasta[chrom][rl-1:rh]) + right_pad) if rl <= rh else ""
 
         # Get the target length os the extracted sequences
-        left_target_len = left_b - left_a + 1
-        right_target_len = right_b - right_a + 1
+        front_len = upstream + inner_start
+        back_len = upstream + inner_start
+        left_target_len = front_len if strand == "+" else back_len
+        right_target_len = back_len if strand == "+" else front_len
         
         # Check if the target lengths were met
-        if len(left_seq) != left_target_len or len(right_seq) != right_target_len:
+        if additional_padding != 0:
             # If set, skip the gene
             if skip_short_genes:
                 # Close the FASTA
@@ -213,6 +215,10 @@ class FastaHandler(PangenomeFileHandler):
         # Apply strand correction
         if strand == "-":
             combined = str(Seq(combined).reverse_complement())
+
+        # Check that the final length is correct
+        if not len(combined) == upstream + inner_start + pad + inner_end + downstream:
+            raise ValueError(f"Final length is not correct: {gene_id} ({start}-{end} ({strand})): {len(combined)} != {upstream + inner_start + pad + inner_end + downstream}\n ll:{ll}, lh:{lh}, rl:{rl}, rh:{rh} (sum: {lh - ll + rh - rl})\n left_target_len:{left_target_len}, right_target_len:{right_target_len}")
 
         # Close the FASTA
         if not _use_cache:
