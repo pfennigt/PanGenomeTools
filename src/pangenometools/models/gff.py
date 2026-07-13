@@ -16,6 +16,45 @@ import sys
 from typing import Union
 from pandas import IndexSlice as idx
 
+# Function to define the correct GFF version if file extension is "gff"
+def read_gff_with_version(file):
+    # Set default version
+    version=1
+    # Read the file until a version string appears
+    with open(file, "r") as f:
+        for line in f:
+            if line.startswith("#"):
+                # Try to determine a version number
+                # Search for a version comment
+                version_string = re.search("gff-version ([0-9\.]+)", line)
+
+                # Extract the major version number
+                if version_string:
+                    version_number = version_string.groups(1)[0]
+                    version_number_split = version_number.split(".")
+                    if len(version_number_split) > 1:
+                        version = int(version_number_split[0])
+                    else:
+                        version = int(version_number)
+                else:
+                    continue
+            else:
+                break
+
+    if version==1:
+        return pr.read_gff(file)
+    elif version==3:
+        return pr.read_gff3(file)
+    else:
+        raise NotImplemented(f"No read function implemented for GFF version {version}")
+
+# Collect the read functions for gene annotation files
+annotation_read_functions = {
+    "gff": read_gff_with_version,
+    "gff3": pr.read_gff3,
+    "gtf": pr.read_gtf
+}
+
 class GFFHandler(PangenomeFileHandler):
     """Handler for GFF/GTF files in pangenome."""
 
