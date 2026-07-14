@@ -26,7 +26,7 @@ def read_gff_with_version(file):
             if line.startswith("#"):
                 # Try to determine a version number
                 # Search for a version comment
-                version_string = re.search("gff-version ([0-9\.]+)", line)
+                version_string = re.search("gff-version ([0-9\\.]+)", line)
 
                 # Extract the major version number
                 if version_string:
