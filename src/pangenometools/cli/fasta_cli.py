@@ -95,7 +95,7 @@ def read_target_genes(target_path: Path) -> tuple:
     genotypes = [h.replace("gene_ID_", "") for h in geno_cols]
     return genotypes, rows
 
-def write_sequence_to_file(sequence, gene_id, genotype, gene_name, args, info, outfile, write_mode):
+def write_sequence_to_file(sequence, gene_id, genotype, gene_name, args, info, outfile, write_mode): #FIXME: When Padding is used on either side, this needs to be handled better
 
     if not sequence:
         if not args.silent:

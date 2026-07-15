@@ -162,7 +162,7 @@ class FastaHandler(PangenomeFileHandler):
                 else:
                     return ""
 
-            else:
+            else: # FIXME: If outer padding is applied, the coordinates in the output FASTA should be modified, maybe by making the value negative or by writing something like 1+150
                 left_pad = "N" * np.abs(left_a - ll)
                 right_pad = "N" * np.abs(right_b - rh)
         else:
