@@ -192,15 +192,18 @@ class FastaHandler(PangenomeFileHandler):
                     return ""
             else:
                 # Apply padding to reach target length
-                left_seq = left_seq + "N" * (left_target_len - len(left_seq))
-                right_seq = right_seq + "N" * (right_target_len - len(right_seq))
+                left_inner_pad = (left_target_len - len(left_seq))
+                right_inner_pad = (right_target_len - len(right_seq))
+
+                left_seq = left_seq + "N" * left_inner_pad
+                right_seq = right_seq + "N" * right_inner_pad
 
                 # Check that the calculated length now match
                 if not len(left_seq) == left_target_len:
                     raise ValueError(f"left seq wrong size: {len(left_seq)} != {left_target_len}")
                 if not len(right_seq) == right_target_len:
                     raise ValueError(f"right seq wrong size: {len(right_seq)} != {right_target_len}")
-                if not additional_padding == (left_target_len - len(left_seq)) + (right_target_len - len(right_seq)):
+                if not additional_padding == left_inner_pad + right_inner_pad:
                     raise ValueError(f"padding wrong size: {additional_padding} != {(left_target_len - len(left_seq)) + (right_target_len - len(right_seq))}")
 
         # Apply special rules for zero-length segments
