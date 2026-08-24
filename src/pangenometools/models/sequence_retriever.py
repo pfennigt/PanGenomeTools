@@ -156,12 +156,12 @@ class SequenceRetriever:
 
         # Use AGAT to extract and translate sequences
         cmd = [
-            "agat", "sp_extract_sequences.pl",
+            "agat_sp_extract_sequences.pl",
             "--gff", str(subset_gff),
             "--fasta", str(self.reference_genome),
             "--output", str(output_fasta),
             "--type", feature_type,
-            "--cds"  # Extract CDS and translate to protein
+            "--aa"  # Extract CDS and translate to protein
         ]
 
         self.logger.info(f"Running AGAT command: {' '.join(cmd)}")
