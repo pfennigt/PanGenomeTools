@@ -55,7 +55,59 @@ class HomologFinder:
         except (subprocess.CalledProcessError, FileNotFoundError):
             return False
 
-    def create_blast_database(self, target_fasta: Path, db_name: str) -> Path:
+    def check_agat_available(self) -> bool:
+        """
+        Check if AGAT is installed and available.
+
+        Returns:
+            True if AGAT is available, False otherwise
+        """
+        try:
+            subprocess.run(["agat", "--version"], capture_output=True, check=True)
+            return True
+        except (subprocess.CalledProcessError, FileNotFoundError):
+            return False
+
+    def create_protein_fasta(self, target_fasta, target_gff, output_fasta) -> Path:
+        """
+        Use AGAT to create a FASTA of gene sequences translated to protein for a BLAST database.
+
+        Args:
+            target_fasta: Path to target FASTA file
+
+        Returns:
+            Path to created FASTA file
+
+        Raises:
+            RuntimeError: If AGAT extraction fails
+        """
+
+        if not self.check_agat_available():
+            raise RuntimeError("AGAT is not installed or not in PATH. "
+                             "Please install AGAT: conda install -c bioconda agat")
+
+        # Use AGAT to extract and translate sequences
+        cmd = [
+            "agat_sp_extract_sequences.pl",
+            "--gff", str(target_gff),
+            "--fasta", str(target_fasta),
+            "--output", str(output_fasta),
+            "--type", "CDS",
+            "--aa"  # Extract CDS and translate to protein
+        ]
+
+        self.logger.info(f"Running AGAT command: {' '.join(cmd)}")
+        
+        try:
+            result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+            self.logger.info("Created FASTA with translated gene sequences")
+            return output_fasta
+            
+        except subprocess.CalledProcessError as e:
+            self.logger.error(f"AGAT failed: {e.stderr}")
+            raise RuntimeError(f"AGAT extraction failed: {e.stderr}")
+
+    def create_blast_database(self, target_fasta: Path, db_name: str, target_gff=None) -> Path:
         """
         Create BLAST database from target sequences.
 
@@ -72,6 +124,10 @@ class HomologFinder:
         if not self.check_blast_available():
             raise RuntimeError("BLAST+ is not installed or not in PATH. "
                              "Please install BLAST+: conda install -c bioconda blast")
+
+        # Create the protein FASTA as basis for the BLASTDB
+        if target_gff is not None:
+            target_fasta = self.create_protein_fasta(target_fasta, target_gff, Path(db_name).parent / "translated.fa")
 
         cmd = [
             "makeblastdb",
@@ -231,7 +287,7 @@ class HomologFinder:
             self.logger.error(f"DIAMOND search failed: {e.stderr}")
             raise RuntimeError(f"DIAMOND search failed: {e.stderr}")
 
-    def find_homologs(self, query_fasta: Path, target_fasta: Path, output_file: Path,
+    def find_homologs(self, query_fasta: Path, target_fasta: Path, output_file: Path, target_gff: Path|None=None,
                      evalue: float = 1e-5, max_target_seqs: int = 10,
                      output_format: str = "6", blast_type: str = "blastp",
                      diamond_sensitivity: str = "sensitive", num_threads: int = 1,
@@ -265,7 +321,7 @@ class HomologFinder:
         db_name = str(output_file.parent / output_file.stem)
         
         if self.method == "blast":
-            db_path = self.create_blast_database(target_fasta, db_name)
+            db_path = self.create_blast_database(target_fasta, db_name, target_gff=target_gff)
         else:  # diamond
             db_path = self.create_diamond_database(target_fasta, db_name)
 

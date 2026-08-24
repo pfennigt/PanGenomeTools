@@ -32,6 +32,10 @@ def setup_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output", required=True,
                        help="Output file path for results")
 
+    # GFF for Gene translation
+    parser.add_argument("--target-gff", default=None, 
+                    help="Path to target genome GFF file")
+
     # Method selection
     parser.add_argument("--method", choices=["blast", "diamond"], default="blast",
                        help="Search method - 'blast' or 'diamond' (default: blast)")
@@ -104,6 +108,7 @@ def find_homologs(args: argparse.Namespace) -> None:
         stats = finder.find_homologs(
             query_fasta=Path(args.query_fasta),
             target_fasta=Path(args.target_genome),
+            target_gff=Path(args.target_gff) if args.target_gff is not None else None,
             output_file=Path(args.output),
             evalue=args.evalue,
             max_target_seqs=args.max_target_seqs,
