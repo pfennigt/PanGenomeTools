@@ -93,7 +93,9 @@ class SequenceRetriever:
                 matches = df[df['gene_name'].str.contains(gene_name, case=False, na=False, regex=False)]
                 if len(matches) > 0:
                     gene_ids.update(matches['ID'].tolist())
-        
+
+        # Exclude any entries that aren't strings
+        gene_ids = {x for x in gene_ids if isinstance(x, str)}
         self.logger.info(f"Found {len(gene_ids)} matching gene IDs")
         
         if len(gene_ids) == 0:
@@ -113,17 +115,20 @@ class SequenceRetriever:
             # Find features whose Parent is in our current set
             parent_matches = df[df['Parent'].isin(all_feature_ids)]
             new_ids = set(parent_matches['ID'].tolist())
+
+            # Exclude any entries that aren't strings
+            new_ids = {x for x in new_ids if isinstance(x, str)}
             
             if new_ids.issubset(all_feature_ids):
                 # No new IDs found, we're done
                 break
             
             all_feature_ids.update(new_ids)
-        
-        self.logger.info(f"Found {len(all_feature_ids)} total features (including children)")
-        
+                
         # Subset the GFF
-        subset_df = df[df['ID'].isin(all_feature_ids)]
+        # Exons may not have IDs, so include Parents in the subset
+        subset_df = df[df['ID'].isin(all_feature_ids) | df['Parent'].isin(all_feature_ids)]
+        self.logger.info(f"Found {subset_df.shape[0]} total features (including children)")
         
         # Write to output GFF file
         # Convert back to PyRanges and write
