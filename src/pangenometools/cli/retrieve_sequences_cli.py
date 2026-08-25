@@ -31,7 +31,7 @@ def setup_parser() -> argparse.ArgumentParser:
                        help="Path to reference genome FASTA file")
     parser.add_argument("--reference-gff", required=True,
                        help="Path to reference GFF annotation file")
-    parser.add_argument("--output", required=True,
+    parser.add_argument("--output", default=None,
                        help="Output FASTA file path")
 
     # Optional arguments
@@ -78,10 +78,16 @@ def retrieve_sequences(args: argparse.Namespace) -> None:
             raise RuntimeError("AGAT is not installed or not in PATH. "
                              "Please install AGAT: conda install -c bioconda agat")
 
+        # If no output name is given, use the input name
+        if args.output is None:
+            output = Path(args.gene_list).stem + "fa"
+        else:
+            output = args.output
+
         # Retrieve sequences
         num_genes, num_sequences = retriever.retrieve_from_gene_list_csv(
             gene_list_csv=Path(args.gene_list),
-            output_fasta=Path(args.output),
+            output_fasta=Path(output),
             feature_type=args.feature_type,
             gene_id_column=args.gene_id_column,
             keep_temp_files=args.keep_temp_files
