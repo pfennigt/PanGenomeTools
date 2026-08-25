@@ -11,12 +11,13 @@ import subprocess
 import pandas as pd
 from Bio import SeqIO
 from tqdm import tqdm
+import numpy as np
 
 
 class HomologFinder:
     """Handler for finding homologs using BLAST or DIAMOND."""
 
-    def __init__(self, method: str = "blast"):
+    def __init__(self, method: str = "blast", db_path=None):
         """
         Initialize homolog finder.
 
@@ -24,6 +25,21 @@ class HomologFinder:
             method: Search method - "blast" or "diamond"
         """
         self.method = method.lower()
+
+        # If a path to a database is provided, check if it exists
+        if db_path is not None:
+            self.db_path= Path(db_path)
+
+            db_extensions = [".phr", ".pin", ".psq", ".pdb", ".ptf", ".pto", ".dmnd"]
+
+            # Check if a db file exists
+            possible_db_files = [db_path + ext for ext in db_extensions]
+            files_exist = np.array([Path(x).exists() for x in possible_db_files])
+
+            if not np.any(files_exist):
+                FileNotFoundError(f"No {method} database files found at {db_path}")
+
+
         self.logger = logging.getLogger(self.__class__.__name__)
         
         if self.method not in ["blast", "diamond"]:
@@ -180,6 +196,15 @@ class HomologFinder:
             self.logger.error(f"DIAMOND database creation failed: {e.stderr}")
             raise RuntimeError(f"DIAMOND database creation failed: {e.stderr}")
 
+    def create_database(self, target_fasta:Path, db_name:str, target_gff:Path|None=None):
+        # Allow for the input of an existing database
+        if self.method == "blast":
+            db_path = self.create_blast_database(target_fasta, db_name, target_gff=target_gff)
+        else:  # diamond
+            db_path = self.create_diamond_database(target_fasta, db_name)
+
+        return db_path
+
     def run_blast_search(self, query_fasta: Path, db_path: Path, output_file: Path,
                         evalue: float = 1e-5, max_target_seqs: int = 10,
                         output_format: str = "6", blast_type: str = "blastp",
@@ -287,7 +312,7 @@ class HomologFinder:
             self.logger.error(f"DIAMOND search failed: {e.stderr}")
             raise RuntimeError(f"DIAMOND search failed: {e.stderr}")
 
-    def find_homologs(self, query_fasta: Path, target_fasta: Path, output_file: Path, target_gff: Path|None=None,
+    def find_homologs(self, query_fasta: Path, target_fasta: Path, output_file: Path, target_gff: Path|None=None, db_name: str|None=None,
                      evalue: float = 1e-5, max_target_seqs: int = 10,
                      output_format: str = "6", blast_type: str = "blastp",
                      diamond_sensitivity: str = "sensitive", num_threads: int = 1,
@@ -317,13 +342,17 @@ class HomologFinder:
         num_queries = len(list(SeqIO.parse(query_fasta, "fasta")))
         self.logger.info(f"Searching for homologs of {num_queries} query sequences")
 
-        # Create database
-        db_name = str(output_file.parent / output_file.stem)
-        
-        if self.method == "blast":
-            db_path = self.create_blast_database(target_fasta, db_name, target_gff=target_gff)
-        else:  # diamond
-            db_path = self.create_diamond_database(target_fasta, db_name)
+        # Create database 
+        # Also allow for the input of an existing database
+        if db_name is None:
+            db_name = str(output_file.parent / output_file.stem)
+
+        if self.db_path is None:
+            # Get the path to the database to be used
+            db_path = self.create_database(target_fasta, db_name, target_gff)
+        else:
+            db_path = self.db_path
+
 
         try:
             # Run search
