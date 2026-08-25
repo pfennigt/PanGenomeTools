@@ -29,7 +29,9 @@ def setup_parser() -> argparse.ArgumentParser:
                        help="Path to query FASTA file (TF protein sequences)")
     parser.add_argument("--target-genome", required=True,
                        help="Path to target genome FASTA file")
-    parser.add_argument("--output", required=True,
+    parser.add_argument("--output", default=None,
+                       help="Output file path for results")
+    parser.add_argument("--db-path", default=None,
                        help="Output file path for results")
 
     # GFF for Gene translation
@@ -92,7 +94,12 @@ def find_homologs(args: argparse.Namespace) -> None:
 
     try:
         # Initialize finder
-        finder = HomologFinder(method=args.method)
+        if args.db_path is not None and Path(args.db_path).is_dir():
+            db_path = args.db_path + "/database"
+        else:
+            db_path = args.db_path
+
+        finder = HomologFinder(method=args.method, db_path=db_path)
 
         # Check if required tool is available
         if args.method == "blast":
@@ -104,12 +111,19 @@ def find_homologs(args: argparse.Namespace) -> None:
                 raise RuntimeError("DIAMOND is not installed or not in PATH. "
                                  "Please install DIAMOND: conda install -c bioconda diamond")
 
+        # Use the quesry name for the output by default
+        if args.output is None:
+            output = Path(args.query_fasta).stem + "tsv"
+        else:
+            output = args.output          
+        
+
         # Find homologs
         stats = finder.find_homologs(
             query_fasta=Path(args.query_fasta),
             target_fasta=Path(args.target_genome),
             target_gff=Path(args.target_gff) if args.target_gff is not None else None,
-            output_file=Path(args.output),
+            output_file=Path(output),
             evalue=args.evalue,
             max_target_seqs=args.max_target_seqs,
             output_format=args.output_format,
