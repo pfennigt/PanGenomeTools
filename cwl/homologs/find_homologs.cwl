@@ -16,7 +16,9 @@ baseCommand: [/usr/local/bin/_entrypoint.sh, python, -m, pangenometools.cli.find
 inputs: 
   # Query FASTA
   query_fasta:
-    type: File
+    type: 
+    - File
+    - {"type": "array", "items": "File"}
     inputBinding:
       prefix: --query-fasta
     doc: "Path to query FASTA file (TF protein sequences)"
