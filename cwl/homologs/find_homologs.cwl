@@ -28,6 +28,7 @@ inputs:
     type: File
     inputBinding:
       prefix: --target-genome
+      valueFrom: $(self.basename)
     doc: "Genome fasta of the reference species to retrieve the gene sequences from."
 
   reference_gff:
@@ -115,6 +116,9 @@ requirements:
   - class: ShellCommandRequirement
   - class: DockerRequirement
     dockerPull: "pangenometools-cwl-blast"
+  - class: InitialWorkDirRequirement
+    listing:
+      - $(inputs.target_genome)
 
 # Hints for better performance
 hints:

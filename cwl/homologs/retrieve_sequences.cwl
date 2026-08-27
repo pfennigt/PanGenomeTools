@@ -27,6 +27,7 @@ inputs:
     type: File
     inputBinding:
       prefix: --reference-genome
+      valueFrom: $(self.basename)
     doc: "Genome fasta of the reference species to retrieve the gene sequences from."
 
   reference_gff:
@@ -35,12 +36,12 @@ inputs:
       prefix: --reference-gff
     doc: "GFF annotation of the reference genome to retrieve the gene sequences from."
 
-# Output files
+# Output file
 outputs:
   translated_sequences:
-    type: File[]
+    type: File
     outputBinding:
-      glob: "*.fa"
+      glob: "$(inputs.gene_list.basename.replace(/\\.[^/.]+$/, '')).fa"
     doc: "FASTA file with the gene sequences translated to protein (one per family)"
 
 # Standard output and error handling
@@ -53,6 +54,9 @@ requirements:
   - class: ShellCommandRequirement
   - class: DockerRequirement
     dockerPull: "pangenometools-cwl"
+  - class: InitialWorkDirRequirement
+    listing:
+      - $(inputs.reference_genome)
 
 # Hints for better performance
 hints:
