@@ -80,7 +80,7 @@ def retrieve_sequences(args: argparse.Namespace) -> None:
 
         # If no output name is given, use the input name
         if args.output is None:
-            output = Path(args.gene_list).stem + "fa"
+            output = Path(args.gene_list).stem + ".fa"
         else:
             output = args.output
 
