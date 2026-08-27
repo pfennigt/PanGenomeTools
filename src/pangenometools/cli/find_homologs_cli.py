@@ -113,7 +113,7 @@ def find_homologs(args: argparse.Namespace) -> None:
 
         # Use the quesry name for the output by default
         if args.output is None:
-            output = Path(args.query_fasta).stem + "tsv"
+            output = Path(args.query_fasta).stem + ".tsv"
         else:
             output = args.output          
         
