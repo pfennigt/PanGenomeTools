@@ -95,6 +95,23 @@ def read_target_genes(target_path: Path) -> tuple:
     genotypes = [h.replace("gene_ID_", "") for h in geno_cols]
     return genotypes, rows
 
+# Make the header entry about locations
+def _make_header_location(
+        left_low,
+        left_high,
+        right_low,
+        right_high,
+        sequence_loc,
+        info,
+        args
+    ):
+    header_location = [
+        f"{info['chrom']}:{info[left_low]}-{info[left_high]}({info['strand']})" if (info['left_len'] >0 and sequence_loc in ["combined", "left"]) else None,
+        f"{info['chrom']}:{info[right_low]}-{info[right_high]}({info['strand']})" if (info['right_len'] >0 and sequence_loc in ["combined", "right"]) and not args.whole_seq else None,
+        ]
+    # Remove either location if it is irrelevant and join
+    return "&".join([x for x in header_location if x is not None])
+
 def write_sequence_to_file(sequence, gene_id, genotype, gene_name, args, info, outfile, write_mode): #FIXME: When Padding is used on either side, this needs to be handled better
 
     if not sequence:
@@ -120,14 +137,27 @@ def write_sequence_to_file(sequence, gene_id, genotype, gene_name, args, info, o
     with open(outfile, write_mode) as out_fh: #FIXME
         for sequence_loc, sequence in sequences.items():
             # Create header
-            header_location = [
-                f"{info['chrom']}:{info['ll']}-{info['lh']}({info['strand']})" if (info['left_len'] >0 and sequence_loc in ["combined", "left"]) else None,
-                f"{info['chrom']}:{info['rl']}-{info['rh']}({info['strand']})" if (info['right_len'] >0 and sequence_loc in ["combined", "right"]) and not args.whole_seq else None,
-                ]
-            # Remove either location if it is irrelevant
-            header_location = [x for x in header_location if x is not None]
-            # Join the locations
-            header_location = "&".join(header_location)
+            # Make the entry about the extracted locations
+            header_location = _make_header_location(
+                left_low="ll",
+                left_high="lh",
+                right_low="rl",
+                right_high="rh",
+                sequence_loc=sequence_loc,
+                info=info,
+                args=args
+            )
+
+            # Make the entry that includes padding
+            header_location_padded = _make_header_location(
+                left_low="left_a",
+                left_high="left_b",
+                right_low="right_a",
+                right_high="right_b",
+                sequence_loc=sequence_loc,
+                info=info,
+                args=args
+            )
 
             # Set the label for the sequence ID
             # Determine if the sequence is a promoter and/or terminator
@@ -166,7 +196,7 @@ def write_sequence_to_file(sequence, gene_id, genotype, gene_name, args, info, o
             # Create the header
             header = (
                 f"{gene_id}{label} genotype={genotype} gene_name={gene_name} type={args.feature_type} "
-                f"location={header_location} extraction_options={ex_options}"
+                f"location={header_location} location_padded={header_location_padded} extraction_options={ex_options}"
             )
 
             # Write to output
