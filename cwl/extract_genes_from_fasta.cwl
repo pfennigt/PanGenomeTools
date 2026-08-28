@@ -109,19 +109,19 @@ inputs:
     default: false
     doc: Write sequences into files per gene group, not per genotype
 
-  skip_short_chromosomes:
+  include_short_chromosomes:
     type: boolean?
     inputBinding:
-      prefix: --skip-short-chromosomes
-    default: true
-    doc: "Skip genes where the chromosome is too short to fit the flanking regions (alternative: padding with N)"
-
-  skip_short_genes:
-    type: boolean?
-    inputBinding:
-      prefix: --skip-short-genes
+      prefix: --include-short-chromosomes
     default: false
-    doc: "Skip genes where the gene is too short to fit the inner extraction regions (alternative: padding with N)"
+    doc: "Apply padding to gene sequences when the chromosome is too short to fit the flanking regions (default: skip gene)"
+
+  include_short_genes:
+    type: boolean?
+    inputBinding:
+      prefix: --include-short-genes
+    default: false
+    doc: "Apply padding to gene sequences when the gene is too short to fit the inner extraction regions (default: skip gene)"
 
   genotypes:
     type:

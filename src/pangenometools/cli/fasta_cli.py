@@ -61,10 +61,10 @@ def setup_fasta_parser() -> argparse.ArgumentParser:
     parser.add_argument("--per-gene-group", action="store_true",
                        help="Write sequences into files per gene group, not per genotype")
 
-    parser.add_argument("--skip-short-chromosomes", action="store_true",
-                       help="Skip genes where the chromosome is too short to fit the flanking regions (alternative: padding with N)")
-    parser.add_argument("--skip-short-genes", action="store_true",
-                       help="Skip genes where the gene is too short to fit the inner extraction regions (alternative: padding with N)")
+    parser.add_argument("--include-short-chromosomes", action="store_true",
+                       help="Apply padding to gene sequences when the chromosome is too short to fit the flanking regions (default: skip gene)")
+    parser.add_argument("--include-short-genes", action="store_true",
+                       help="Apply padding to gene sequences when the gene is too short to fit the inner extraction regions (default: skip gene)")
 
     # Additional options
     parser.add_argument("--silent", action="store_true",
@@ -261,8 +261,8 @@ def extract_with_target_genes(fasta_handler, genotypes, target_rows, args):
                         pad=args.pad,
                         whole_seq=args.whole_seq,
                         use_five_prime_direction=args.use_five_prime_direction,
-                        skip_short_chromosomes=args.skip_short_chromosomes,
-                        skip_short_genes=args.skip_short_genes,
+                        skip_short_chromosomes=not args.include_short_chromosomes,
+                        skip_short_genes=not args.include_short_genes,
                         return_info=True,
                         _use_cache = True
                     )
@@ -320,8 +320,8 @@ def extract_all_genes(fasta_handler:FastaHandler, genotypes, args):
                     pad=args.pad,
                     whole_seq=args.whole_seq,
                     use_five_prime_direction=args.use_five_prime_direction,
-                    skip_short_chromosomes=args.skip_short_chromosomes,
-                    skip_short_genes=args.skip_short_genes,
+                    skip_short_chromosomes=not args.include_short_chromosomes,
+                    skip_short_genes=not args.include_short_genes,
                     return_info=True,
                     _use_cache = True
                 )
