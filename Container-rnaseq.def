@@ -1,0 +1,37 @@
+Bootstrap: docker
+From: mambaorg/micromamba
+# Use micromamba for package handling
+
+%files
+    # Copy the whole directory
+    . /app
+
+%post
+    # Install the environment from file
+    micromamba install --yes --quiet --name base -f /app/environment.yml
+
+    micromamba install -n base --yes --quiet bioconda::kallisto bioconda::fastqc bioconda::multiqc r-base
+
+    # Install the package in the copied folder using pip
+    cd /app
+    micromamba run -n base pip install -e .
+
+    # Clean up lock files
+    micromamba clean -a --yes
+
+%environment  
+    # Add mamba to the path to ensure python is executable
+    export PATH=/opt/conda/bin:$PATH
+    export PATH=$PATH:/app/ncbi-blast-2.17.0+/bin
+
+%runscript
+    # Execute the input command with activated base environment
+    exec "$@"
+
+%test
+    # Test that python with pangenometools is available in the container
+    python -c "import pangenometools"
+    kallisto version
+    fastqc --version
+    multiqc --version
+    R --version
