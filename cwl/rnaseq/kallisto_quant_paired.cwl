@@ -45,6 +45,10 @@ outputs:
       outputEval: ${self[0].basename=inputs.sample_name+".tsv"; return self;}
     doc: Kallisto abundance TSV file
 
+# Standard output and error handling
+stdout: kallisto_quant.log
+stderr: kallisto_quant.error.log
+
 # Base command
 baseCommand: bash
 
@@ -55,3 +59,8 @@ arguments:
       -i $(inputs.index.path) \
       -o .out <(cat $(inputs.fastq_file1.join(' ')))  <(cat $(inputs.fastq_file2.join(' ')))
 
+# Hints for better performance
+hints:
+  - class: ResourceRequirement
+    coresMin: 1
+    ramMin: 1024
