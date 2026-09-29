@@ -35,6 +35,10 @@ inputs:
   fastq_file2:
     type: string[]
     doc: Second FASTQ file (R2)
+  threads:
+    type: int?
+    default: 5
+    doc: "Number of threads to use"
 
 # Outputs
 outputs:
@@ -44,6 +48,12 @@ outputs:
       glob: .out/abundance.tsv
       outputEval: ${self[0].basename=inputs.sample_name+".tsv"; return self;}
     doc: Kallisto abundance TSV file
+  abundance_h5:
+    type: File
+    outputBinding:
+      glob: .out/abundance.h5
+      outputEval: ${self[0].basename=inputs.sample_name+".h5"; return self;}
+    doc: Kallisto abundance HDF5 file
 
 # Standard output and error handling
 stdout: kallisto_quant.log
@@ -57,10 +67,11 @@ arguments:
   - |
     kallisto quant \
       -i $(inputs.index.path) \
+      -t $(inputs.threads) \
       -o .out <(cat $(inputs.fastq_file1.join(' ')))  <(cat $(inputs.fastq_file2.join(' ')))
 
 # Hints for better performance
 hints:
   - class: ResourceRequirement
-    coresMin: 1
+    coresMin: $(inputs.threads)
     ramMin: 1024
