@@ -10,7 +10,7 @@ import pandas as pd
 from typing import Any
 
 
-def parse_csv_columns(csv_path: Path, output_dir: Path|str|None = None) -> list[str]:
+def parse_csv_columns(csv_path: Path, output_dir: Path|str|None = None, groupby: str|None=None) -> list[str]:
     """
     Parse a CSV file and return each column as a separate list.
     
@@ -31,9 +31,20 @@ def parse_csv_columns(csv_path: Path, output_dir: Path|str|None = None) -> list[
         output_dir=Path(output_dir)
         output_dir.mkdir(parents=True, exist_ok=True)
 
+
+    # If a grouping column is given, group by that column
+    if groupby is not None: 
+        groups = {}
+        for name, values in df.groupby(groupby):
+            values=values.drop(groupby, axis=1)
+            groups[name] = {k:v.to_numpy().flatten() for k,v in values.T.iterrows()}
+
+        df = pd.DataFrame(groups).T
+        df[groupby] = df.index
+
     # Save individual columns as files
     for column_name, values in df.T.iterrows():
-        output_file = output_dir / f"{column_name}.json"
-        values.to_json(output_file, mode="w", index=False, orient="records")
+            output_file = output_dir / f"{column_name}.json"
+            values.to_json(output_file, mode="w", index=False, orient="records")
     
     return df.columns.to_list()

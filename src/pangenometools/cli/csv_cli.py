@@ -27,6 +27,9 @@ def setup_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-dir", default=None,
                        help="Output directory for JSON files")
 
+    parser.add_argument("--groupby", default=None,
+                       help="Column to group all columns by")
+
     return parser
 
 def main():
@@ -38,7 +41,7 @@ def main():
     parser = setup_parser()
     args = parser.parse_args()
 
-    parsed_columns = parse_csv_columns(csv_path=args.csv, output_dir=args.output_dir)
+    parsed_columns = parse_csv_columns(csv_path=args.csv, output_dir=args.output_dir, groupby=args.groupby)
 
     return parsed_columns
 
