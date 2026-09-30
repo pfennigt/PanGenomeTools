@@ -16,6 +16,7 @@ from .gff import GFFHandler
 import pyranges as pr
 from ..utils import calculate_coordinate_boundaries, clip_coordinates
 import sys
+import subprocess
 
 
 class FastaHandler(PangenomeFileHandler):
@@ -246,3 +247,66 @@ class FastaHandler(PangenomeFileHandler):
             return combined, info
         else:
             return combined
+
+    # Extract the full FASTA with AGAT
+    def extract_agat(
+        self,
+        genotype: str,
+        type:str,
+        extra_args: str|None = None,
+        output_dir:str = ".",
+        ) -> None:
+        """
+        Extract sequence for a gene with given parameters.
+
+        Args:
+            genotype: Genotype identifier
+            gene_id: Gene ID to extract sequence for
+            feature_type: Type of feature to use for coordinates
+            upstream: Nucleotides to include upstream (5' direction)
+            downstream: Nucleotides to include downstream (3' direction)
+            inner_start: Nucleotides to include from start of feature
+            inner_end: Nucleotides to include from end of feature
+            merge_strategy: How to handle multiple features
+            pad: Number of Ns to pad between segments (-1 treated as 0)
+            whole_seq: Extract the whole sequence between start and end
+            use_five_prime_direction: If True, always interpret upstream/downstream
+                                     in 5' direction regardless of strand.
+                                     If False, reverse upstream/downstream for negative strand.
+            return_info: If True, return dict with extraction info. If False, return sequence only.
+
+        Returns:
+            If return_info is False: Extracted sequence as string
+            If return_info is True: Tuple of (sequence, info_dict)
+
+        Raises:
+            ValueError: If gene or features not found
+            FileNotFoundError: If FASTA file not found
+        """
+
+        # --- AGAT base command ---
+        AGAT_CMD = (
+            "agat_sp_extract_sequences.pl "
+            "-g {annotation} -f {genome} -t {type} "
+            "{extra} "
+            "-o {output}"
+        )
+
+
+        annotation = self.resolve_path(genotype, "annotation")
+        genome = self.resolve_path(genotype, "assembly")
+        out_fa = Path(output_dir) / f"{genotype}.fa"
+
+        cmd = AGAT_CMD.format(
+            annotation=annotation.resolve(),
+            genome=genome.resolve(),
+            type=type,
+            extra=extra_args,
+            output=out_fa
+        )
+
+        try:
+            subprocess.run(cmd, shell=True, check=True)
+
+        except subprocess.CalledProcessError as e:
+            print(f"AGAT failed for {genotype}: {e}", file=sys.stdout)
