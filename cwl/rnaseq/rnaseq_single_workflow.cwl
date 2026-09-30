@@ -36,14 +36,24 @@ inputs:
     type: int
     doc: "Standard deviation of fragment lengths in FASTQ file"
 
+  # Settings for runs
+  threads_fastqc:
+    type: int
+    default: 1
+    doc: "Number of threads to use for each FASTQC process"
+  threads_kallisto:
+    type: int
+    default: 1
+    doc: "Number of threads to use for each Kallisto process"
+
 # Outputs
 outputs:
   extracted_genes:
     type: File
     outputSource: extract_genes/extracted_sequences
   sample_abundances:
-    type: File[]
-    outputSource: kallisto/abundance_h5
+    type: Directory
+    outputSource: collect_kallisto_files/out
     doc: Abundance HDF5 files with kallisto estimates for each sample
   combined_abundance:
     type: File
@@ -60,7 +70,7 @@ steps:
   #                                    FASTQC                                    #
   ################################################################################
 
-  # Step 3: Parse the rnaseq_index CSV file
+  # Parse the rnaseq_index CSV file
   parse_csv:
     run: rnaseq_single_parse_csv.cwl
     in:
@@ -72,6 +82,7 @@ steps:
     in: 
       ref_dir: rnaseq_folder
       fastq_file: parse_csv/read
+      threads: threads_fastqc
     out: [fastqc_report]
     scatter: fastq_file
 
@@ -119,11 +130,20 @@ steps:
       fastq_file: parse_csv_grouped/read
       fragment_length_mean: fragment_length_mean
       fragment_length_sd: fragment_length_sd
+      threads: threads_kallisto
     scatter: [sample_name, fastq_file]
     scatterMethod: dotproduct
     out: [abundance_tsv, abundance_h5]
 
-  # Step 5: Combine all abundance files
+  # Collect the kallisto files in a directory
+  collect_kallisto_files:
+    run: ../files_to_dir.cwl
+    in:
+      files: kallisto/abundance_h5
+      dir_name: {default: "abundances"}
+    out: [out]
+
+  # Combine all abundance files
   combine_step:
     run: combine_abundance.cwl
     in:

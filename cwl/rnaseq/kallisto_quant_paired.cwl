@@ -37,7 +37,7 @@ inputs:
     doc: Second FASTQ file (R2)
   threads:
     type: int?
-    default: 5
+    default: 1
     doc: "Number of threads to use"
 
 # Outputs

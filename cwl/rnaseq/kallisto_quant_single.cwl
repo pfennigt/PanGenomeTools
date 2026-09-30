@@ -40,7 +40,7 @@ inputs:
     doc: "Standard deviation of fragment lengths in FASTQ file"
   threads:
     type: int?
-    default: 5
+    default: 1
     doc: "Number of threads to use"
 
 # Outputs
