@@ -1,0 +1,4 @@
+sample,read
+sample1,raw_reads/sample1_L1_1.fq.gz
+sample1,raw_reads/sample1_L2_1.fq.gz
+sample2,raw_reads/sample2_L1_1.fq.gz
