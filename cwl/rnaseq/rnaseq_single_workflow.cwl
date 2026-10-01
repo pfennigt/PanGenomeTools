@@ -48,9 +48,6 @@ inputs:
 
 # Outputs
 outputs:
-  extracted_genes:
-    type: File
-    outputSource: extract_genes/extracted_sequences
   sample_abundances:
     type: Directory
     outputSource: collect_kallisto_files/out
