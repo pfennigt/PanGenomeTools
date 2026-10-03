@@ -37,6 +37,10 @@ inputs:
     type: int
     default: 1
     doc: "Number of threads to use for each Kallisto process"
+  batch_size_multiqc:
+    type: int
+    default: 100
+    doc: "Number of FastQC files that are combined in one MultiQC report"
 
 # Outputs
 outputs:
@@ -49,7 +53,7 @@ outputs:
     outputSource: combine_step/combined_abundance
     doc: Combined abundance TSV file with kallisto estimates for all samples
   multiqc_report:
-    type: File
+    type: File[]
     outputSource: multiqc/multiqc_report
     doc: MultiQC report of the RNA-seq files
 
@@ -84,11 +88,19 @@ steps:
     out: [fastqc_report]
     scatter: fastq_file
 
+  batch_fastqc_results:
+    run: ../batch_files.cwl
+    in:
+      files: fastqc_1/fastqc_report
+      files2: fastqc_2/fastqc_report
+      batch_size: batch_size_multiqc
+    out: [batches]
+
   multiqc:
     run: multiqc.cwl
     in:
-      fastqc_reports: fastqc_1/fastqc_report
-      fastqc_reports2: fastqc_2/fastqc_report
+      fastqc_reports: batch_fastqc_results/batches
+    scatter: fastqc_reports
     out: [multiqc_report]
 
   ################################################################################
